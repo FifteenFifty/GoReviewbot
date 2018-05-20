@@ -8,13 +8,14 @@ import (
     "log"
 
     "rbbot/plugin/reviewdata"
+    "rbbot/reviewer"
 )
 
 /**
  * A ReviewRequester plugin is something that provides the following functions.
  */
 type ReviewRequester interface {
-    Version()       string // The plguin's version
+    Version()       (int,int,int) // The plguin's version (major minor micro)
     CanonicalName() string // The plugin's canonical name
     Run(chan <- reviewdata.ReviewRequest) // Runs the requester
 }
@@ -50,7 +51,7 @@ func RunRequestPlugins(pluginDir         string,
     } else {
         for _, file := range pluginFiles {
             // Load the plugin
-            plug, err := plugin.Open(file.Name())
+            plug, err := plugin.Open(pluginDir + "/" + file.Name())
             if err != nil {
                 fmt.Println(err)
                 success = false
@@ -78,6 +79,8 @@ func RunRequestPlugins(pluginDir         string,
 
             // Run the plugin
             go reviewRequester.Run(reviewRequestChan)
+
+            fmt.Printf("Loaded requester: %s\n", reviewRequester.CanonicalName())
         }
     }
 
@@ -102,4 +105,7 @@ func main() {
     if (!RunRequestPlugins("./plugins/request", reviewRequests)) {
         log.Fatal("Failed to load request plugins")
     }
+
+    // Set the reviewer going
+    reviewer.Go(reviewRequests)
 }
