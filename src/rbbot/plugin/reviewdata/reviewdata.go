@@ -91,8 +91,9 @@ type Line struct {
  * A review chunk - a set of lines on which the same action is performed.
  */
 type DiffChunk struct {
-    Index int
-    Lines []Line
+    Index  int
+    Lines  []Line
+    Change string
 }
 
 /**

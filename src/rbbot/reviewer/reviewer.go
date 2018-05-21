@@ -12,34 +12,67 @@ import (
         "mime/multipart"
         "strconv"
         "regexp"
+        "plugin"
+        "errors"
 
         "rbbot/plugin/reviewdata"
 )
 
+var (
+    rbApi   string
+    rbToken string
+)
+
+/**
+ * A single file in ReviewBoard's diffs. Used to pick up links.
+ */
 type DiffFile struct {
     Id    int
     Links reviewdata.LinkContainer
 }
 
+/**
+ * All of the files in a review.
+ */
 type DiffFileContainer struct {
     Files []DiffFile
 }
 
+/**
+ * Ancillary data about a file that we pick up.
+ */
 type ReviewFileData struct {
     File struct {
         Dest_File string
     }
 }
 
+/**
+ * The response from publishing a review. Used to pick up the ID.
+ */
 type ReviewResponse struct {
     Review struct {
         Id int
     }
 }
 
+/**
+ * Wraps the review request that we receive.
+ */
 type ReviewContainer struct {
     Stat           string
     Review_Request reviewdata.ReviewRequest
+}
+
+/**
+ * A ReviewerPlugin is something that provides the following functions.
+ */
+type ReviewerPlugin interface {
+    Version()       (int,int,int) // The plguin's version (major minor micro)
+    CanonicalName() string        // The plugin's canonical name
+    Check(reviewdata.FileDiff,
+          chan <- reviewdata.Comment,
+          *sync.WaitGroup)           // Runs the review plugin
 }
 
 /**
@@ -48,8 +81,7 @@ type ReviewContainer struct {
 func GetDiffedFiles(link string) (error, DiffFileContainer) {
     req, err := http.NewRequest("GET", link + "/files/", nil)
 
-    req.Header.Add("Authorization",
-                   "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+    req.Header.Add("Authorization", rbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -63,8 +95,6 @@ func GetDiffedFiles(link string) (error, DiffFileContainer) {
     if (err != nil) {
         log.Fatal(err)
     }
-
-    fmt.Printf("The body is: %s\n\n", body)
 
     var diffFiles DiffFileContainer
 
@@ -81,11 +111,13 @@ func GetDiffedFiles(link string) (error, DiffFileContainer) {
     return err, diffFiles
 }
 
+/**
+ * Retrieves a single file diff from a review's file links.
+ */
 func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
     req, err := http.NewRequest("GET", links.Self.Href, nil)
 
-    req.Header.Add("Authorization",
-                   "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+    req.Header.Add("Authorization", rbToken)
     req.Header.Add("Accept",
                    "application/vnd.reviewboard.org.diff.data+json")
 
@@ -101,8 +133,6 @@ func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
     if (err != nil) {
         log.Fatal(err)
     }
-
-    fmt.Printf("The body is: %s\n\n", body)
 
     var file reviewdata.FileDiff
 
@@ -122,7 +152,7 @@ func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
         log.Fatal(err)
     }
 
-    err, entireFile := GetEntireFile(links.Patched_File.Href)
+    err, entireFile := GetRawFile(links.Patched_File.Href)
 
     if ( err != nil) {
         log.Fatal(err)
@@ -135,11 +165,13 @@ func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
 
 }
 
-func GetEntireFile(link string) (error, []byte) {
+/**
+ * Retrieves a raw file from a review.
+ */
+func GetRawFile(link string) (error, []byte) {
     req, err := http.NewRequest("GET", link, nil)
 
-    req.Header.Add("Authorization",
-                   "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+    req.Header.Add("Authorization", rbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -157,11 +189,13 @@ func GetEntireFile(link string) (error, []byte) {
     return err, body
 }
 
+/**
+ * Retrieves ancillary data about a file.
+ */
 func GetFileData(link string) (error, ReviewFileData) {
     req, err := http.NewRequest("GET", link, nil)
 
-    req.Header.Add("Authorization",
-                   "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+    req.Header.Add("Authorization", rbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -243,13 +277,17 @@ func ManageComments(inChan <- chan reviewdata.Comment,
     }
 }
 
+/**
+ * Runs all of the checkers on a single file, and collates comments.
+ */
 func CheckFileAndComment(file           reviewdata.FileDiff,
                          reviewIdStr    string,
                          responseIdStr  string,
                          commentCount  *int32,
-                         wg            *sync.WaitGroup) {
+                         wg            *sync.WaitGroup,
+                         reviewPlugins []ReviewerPlugin) {
     // Count the plugins
-    var numCheckers = 1
+    var numCheckers = len(reviewPlugins)
 
     // One comment manager
     var commentMgrWg sync.WaitGroup
@@ -268,6 +306,9 @@ func CheckFileAndComment(file           reviewdata.FileDiff,
     go ManageComments(comments, &commentedFile, &commentMgrWg)
 
     //Run the checkers
+    for i := 0; i < numCheckers; i++ {
+        go reviewPlugins[i].Check(file, comments, &checkerGroup)
+    }
 
     // Wait for them all to complete
     checkerGroup.Wait()
@@ -290,9 +331,14 @@ func CheckFileAndComment(file           reviewdata.FileDiff,
     wg.Done()
 }
 
+/**
+ * Runs all of the checker plugins, and submits comments to the review. Returns
+ * the number of comments made.
+ */
 func RunCheckersAndComment(reviewIdStr    string,
                            responseIdStr  string,
-                           files         *[]reviewdata.FileDiff) (int32) {
+                           files         *[]reviewdata.FileDiff,
+                           reviewPlugins  []ReviewerPlugin) (int32) {
     var fileCheckWaitGroup sync.WaitGroup
     var commentsMade int32 = 0
 
@@ -303,7 +349,8 @@ func RunCheckersAndComment(reviewIdStr    string,
                                reviewIdStr,
                                responseIdStr,
                                &commentsMade,
-                               &fileCheckWaitGroup)
+                               &fileCheckWaitGroup,
+                               reviewPlugins)
     }
 
     // Wait for all file checks to complete
@@ -312,11 +359,13 @@ func RunCheckersAndComment(reviewIdStr    string,
     return atomic.LoadInt32(&commentsMade)
 }
 
-
-
-
-
-
+/**
+ * Creates an empty review reply, to which comments can be attached.
+ *
+ * @param reviewId The review ID.
+ *
+ * @retval string The ID of the review reply, as a string.
+ */
 func CreateReviewReply (reviewId string) string {
     var b bytes.Buffer
     w := multipart.NewWriter(&b)
@@ -333,21 +382,14 @@ func CreateReviewReply (reviewId string) string {
 
     w.Close()
 
-    var reviewUrl string = "http://reviews.example.com/api/review-requests/" +
-                           reviewId +
-                           "/reviews/"
-
-    fmt.Printf("\n\nURL: %s", reviewUrl)
+    var reviewUrl string = rbApi + "/review-requests/" + reviewId + "/reviews/"
 
     // Post a new blank review, to which we will add comments
     req, err := http.NewRequest("POST", reviewUrl, &b)
 
-    req.Header.Add("Authorization",
-                   "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+    req.Header.Add("Authorization", rbToken)
     req.Header.Set("Content-Type",
                    w.FormDataContentType())
-
-    fmt.Printf("Content type: %s", w.FormDataContentType())
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -375,6 +417,15 @@ func CreateReviewReply (reviewId string) string {
     return reviewResponseIdString
 }
 
+/**
+ * Sends all comments for a single file, adding them to an existing review
+ * response.
+ *
+ * @param reviewId               The ID of the review being done.
+ * @param reviewResponseIdString The ID of the existing review response.
+ * @param comments               A CommentedFile containing all of the comments
+ *                               for the file.
+ */
 func SendFileComments (reviewId               string,
                        reviewResponseIdString string,
                        comments               reviewdata.CommentedFile) {
@@ -465,15 +516,12 @@ func SendFileComments (reviewId               string,
                                               reviewResponseIdString +
                                               "/diff-comments/"
 
-                fmt.Printf("Sending: %+v\n\n", commentBuffer)
-
                 // Post the comments
                 req, err := http.NewRequest("POST",
                                             reviewCommentUrl,
                                             &commentBuffer)
 
-                req.Header.Add("Authorization",
-                               "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+                req.Header.Add("Authorization", rbToken)
                 req.Header.Set("Content-Type",
                                commentWriter.FormDataContentType())
 
@@ -484,14 +532,23 @@ func SendFileComments (reviewId               string,
                 }
                 defer resp.Body.Close()
 
-                body, _ := ioutil.ReadAll(resp.Body)
-
-                fmt.Printf("Response: %s\n\n", body)
+                //TODO - error handling
             }
         }
     }
 }
 
+/**
+ * Publishes a review response, making it public and unmodifiable.
+ *
+ * @param reviewId      The ID of the review whose response is being published.
+ * @param responseIdStr The ID of the response being published.
+ * @param requester     The name of the entity that requested the review.
+ * @param commented     Whether any checkers made comments.
+ * @param extraComment  A comment from any checkers which did not relate to
+ *                      files.
+ * @param seenBefore    Whether we've seen this review before.
+ */
 func PublishReview(reviewId      string,
                    responseIdStr string,
                    requester     string,
@@ -570,8 +627,7 @@ func PublishReview(reviewId      string,
     // Update the review to publish
     req, err := http.NewRequest("PUT", reviewUrl, &publishBuffer)
 
-    req.Header.Add("Authorization",
-                   "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+    req.Header.Add("Authorization", rbToken)
     req.Header.Set("Content-Type",
                    publishWriter.FormDataContentType())
 
@@ -582,19 +638,23 @@ func PublishReview(reviewId      string,
     }
     defer resp.Body.Close()
 
-    body, _ := ioutil.ReadAll(resp.Body)
-
-    fmt.Printf("Response: %s\n\n", body)
+    //TODO - error handling
 }
 
+/**
+ * Retrieves a review request by its ID.
+ * 
+ * @param reviewId The review ID
+ *
+ * @retval error, string Any error that occurred, and the review request.
+ */
 func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
     req, err := http.NewRequest("GET",
                                 "http://reviews.example.com/api/" +
                                 "review-requests/" + reviewId + "/",
                                 nil)
 
-    req.Header.Add("Authorization",
-                   "token 940121df848fabb83c5b02a66b6ed1da513c78ff")
+    req.Header.Add("Authorization", rbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -620,8 +680,16 @@ func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
     return err, review.Review_Request
 }
 
-func DoReview(incomingReq reviewdata.ReviewRequest) {
+/**
+ * Performs a review.
+ *
+ * @param incomingReq   The incoming review request.
+ * @param reviewPlugins A list of plugins that should be run against the review.
+ */
+func DoReview(incomingReq   reviewdata.ReviewRequest,
+              reviewPlugins []ReviewerPlugin) {
     reviewId := incomingReq.ReviewId
+    fmt.Println("Received review request for: " + reviewId)
 
     var populatedRequest reviewdata.ReviewRequest = incomingReq
 
@@ -662,7 +730,8 @@ func DoReview(incomingReq reviewdata.ReviewRequest) {
         // Comment on the files
         commentsMade = int(RunCheckersAndComment(reviewId,
                                                  responseIdStr,
-                                                 &diffFiles))
+                                                 &diffFiles,
+                                                 reviewPlugins))
 
         //TODO - allow checkers to populate the extra comment
         var extraComment string = "TODO"
@@ -682,8 +751,77 @@ func DoReview(incomingReq reviewdata.ReviewRequest) {
     populatedRequest.ResultChan <- result
 }
 
-func Go(reviewReqs chan reviewdata.ReviewRequest) {
+/**
+ * Manages reviewer plugins.
+ *
+ * Reviewer plugins receive file diffs and generate comments on them.
+ *
+ * @param pluginDir The directory from which requester plugins should be
+ *                  loaded.
+ */
+func LoadReviewerPlugins(pluginDir string) ([]ReviewerPlugin, error) {
+    var plugins []ReviewerPlugin
+
+    // Gather all of the files in the plugin directory
+    pluginFiles, err := ioutil.ReadDir(pluginDir)
+
+    if (err != nil) {
+        fmt.Printf("Could not find any reviewer plugins in %s\n", pluginDir)
+        fmt.Println(err)
+    } else if (len(pluginFiles) == 0) {
+        fmt.Println("Failed to find any reviewer plugins")
+        err = errors.New("Failed to find any reviewer plugins")
+    } else {
+        for _, file := range pluginFiles {
+            // Load the plugin
+            plug, err := plugin.Open(pluginDir + "/" + file.Name())
+            if err != nil {
+                fmt.Println(err)
+                break
+            }
+
+            // Look up the Reviewer symbol, which the plugin must have exported
+            reviewPlugin, err := plug.Lookup("ReviewerPlugin")
+            if err != nil {
+                fmt.Println(err)
+                break
+            }
+
+            // Assert that the loaded symbol is a ReviewerPlugin
+            var reviewer ReviewerPlugin
+            reviewer, ok := reviewPlugin.(ReviewerPlugin)
+            if !ok {
+                fmt.Printf("Could not load Reviewer symbol from %s\n", file)
+                break
+            }
+
+            // Add the plugin to out list
+            plugins = append(plugins, reviewer)
+
+            fmt.Printf("Loaded plugin: %s\n", reviewer.CanonicalName())
+        }
+    }
+
+    return plugins, err
+}
+
+/**
+ * Runs the reviewer. Blocks on the reviewReqs channel, handling reviews as they
+ * come in.
+ *
+ * @param reviewReqs A channel through which review requests are received.
+ */
+func Go(reviewReqs <-chan reviewdata.ReviewRequest) {
+    rbApi   = "http://reviews.example.com/api"
+    rbToken = "token 940121df848fabb83c5b02a66b6ed1da513c78ff"
+
+    plugins, err := LoadReviewerPlugins("./plugins/review")
+
+    if (err != nil) {
+        log.Fatal(err)
+    }
+
     for {
-        go DoReview(<-reviewReqs)
+        go DoReview(<-reviewReqs, plugins)
     }
 }

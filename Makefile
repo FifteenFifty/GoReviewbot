@@ -11,4 +11,7 @@ ${BIN} : ${SRC}
 .PHONY: test
 
 test:
-	cd src/rbplugin/httprequester && env GOPATH=${GOPATH} GOBIN=${GOBIN} $(MAKE)
+	cd src/rbplugin/requester/httprequester && env GOPATH=${GOPATH} GOBIN=${GOBIN} $(MAKE)
+	cp src/rbplugin/requester/httprequester/httprequester.so $(CURDIR)/plugins/request/
+	cd src/rbplugin/reviewer/linereviewer && env GOPATH=${GOPATH} GOBIN=${GOBIN} $(MAKE)
+	cp src/rbplugin/reviewer/linereviewer/linereviewer.so $(CURDIR)/plugins/review/
