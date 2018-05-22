@@ -2,7 +2,7 @@
 package main
 
 import (
-    "rbbot/plugin/reviewdata"
+    "rbplugindata/reviewdata"
     "sync"
 )
 
@@ -56,7 +56,7 @@ func (p Reviewer) CanonicalName() string {
 }
 
 /**
- * Runs the plugin.
+ * Runs the plugin on a file.
  */
 func (p Reviewer) Check(file        reviewdata.FileDiff,
                         commentChan chan <- reviewdata.Comment,
@@ -67,6 +67,16 @@ func (p Reviewer) Check(file        reviewdata.FileDiff,
             CheckLength(chunk, commentChan)
         }
     }
+
+    (*wg).Done()
+}
+
+/**
+ * Runs the plugin on a review request.
+ */
+func (p Reviewer) CheckReview(review      reviewdata.ReviewRequest,
+                              commentChan chan <- string,
+                              wg          *sync.WaitGroup) {
 
     (*wg).Done()
 }

@@ -15,7 +15,8 @@ import (
         "plugin"
         "errors"
 
-        "rbbot/plugin/reviewdata"
+        "rbbot/db"
+        "rbplugindata/reviewdata"
 )
 
 var (
@@ -72,7 +73,10 @@ type ReviewerPlugin interface {
     CanonicalName() string        // The plugin's canonical name
     Check(reviewdata.FileDiff,
           chan <- reviewdata.Comment,
-          *sync.WaitGroup)           // Runs the review plugin
+          *sync.WaitGroup)           // Runs the review plugin on a file
+    CheckReview(reviewdata.ReviewRequest,
+                chan <- string,
+                *sync.WaitGroup) // Runs the review plugin on the review request
 }
 
 /**
@@ -333,16 +337,27 @@ func CheckFileAndComment(file           reviewdata.FileDiff,
 
 /**
  * Runs all of the checker plugins, and submits comments to the review. Returns
- * the number of comments made.
+ * the number of comments made, and a general review comment.
  */
 func RunCheckersAndComment(reviewIdStr    string,
                            responseIdStr  string,
+                           reviewRequest  reviewdata.ReviewRequest,
                            files         *[]reviewdata.FileDiff,
-                           reviewPlugins  []ReviewerPlugin) (int32) {
-    var fileCheckWaitGroup sync.WaitGroup
+                           reviewPlugins  []ReviewerPlugin) (int, string) {
+    var fileCheckWaitGroup   sync.WaitGroup
+    var reviewCheckWaitGroup sync.WaitGroup
     var commentsMade int32 = 0
 
     fileCheckWaitGroup.Add(len(*files))
+    reviewCheckWaitGroup.Add(len(reviewPlugins))
+
+    var reviewCommentChan chan string = make(chan string, len(reviewPlugins))
+
+    for i := 0; i < len(reviewPlugins); i++ {
+        go reviewPlugins[i].CheckReview(reviewRequest,
+                                        reviewCommentChan,
+                                        &reviewCheckWaitGroup)
+    }
 
     for i := 0; i < len(*files); i++ {
         go CheckFileAndComment((*files)[i],
@@ -355,8 +370,16 @@ func RunCheckersAndComment(reviewIdStr    string,
 
     // Wait for all file checks to complete
     fileCheckWaitGroup.Wait()
+    // Wait for all review checks to complete
+    reviewCheckWaitGroup.Wait()
 
-    return atomic.LoadInt32(&commentsMade)
+    var generalComment string = ""
+
+    for i := 0; i < len(reviewCommentChan); i++ {
+        generalComment += <-reviewCommentChan + "\n"
+    }
+
+    return int(atomic.LoadInt32(&commentsMade)), generalComment
 }
 
 /**
@@ -643,7 +666,7 @@ func PublishReview(reviewId      string,
 
 /**
  * Retrieves a review request by its ID.
- * 
+ *
  * @param reviewId The review ID
  *
  * @retval error, string Any error that occurred, and the review request.
@@ -692,6 +715,7 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     fmt.Println("Received review request for: " + reviewId)
 
     var populatedRequest reviewdata.ReviewRequest = incomingReq
+    var commentsMade     int = 0
 
     // If we've not already filled in the request, do that
     if (incomingReq.Id == 0) {
@@ -700,50 +724,60 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
         populatedRequest.SeenBefore = incomingReq.SeenBefore
     }
 
-    // Pick up the review's diffs
-    err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
+    // Check if we've seen this diff before
+    lastSeenDiff, found := db.KvGet("RLD" + reviewId)
 
-    excludeFileRegex := regexp.MustCompile("TODO - implement")
-
-    //TODO - configuration to pick stuff out of the review title, and pass it to
-    //       the checkers
-    var diffFiles    []reviewdata.FileDiff
-    var commentsMade int = 0
-
-    if (err != nil) {
-        // Can't retrieve any files, skip this review
-        fmt.Printf("Could not find any files: %s\n", err)
+    if (found && lastSeenDiff == populatedRequest.Links.Latest_Diff.Href) {
+        // We've already reviewed this before, ignore
+        fmt.Println("Ignoring already-seen diff for review " + reviewId)
     } else {
-        for _, element := range diff.Files {
-            _, fileDiff := GetFileDiff(element.Links)
+        // Pick up the review's diffs
+        err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
 
-            if (!excludeFileRegex.MatchString(fileDiff.Filename)) {
-                fileDiff.Id = element.Id
-                diffFiles   = append(diffFiles, fileDiff)
+        excludeFileRegex := regexp.MustCompile("TODO - implement")
+
+        //TODO - configuration to pick stuff out of the review title, and pass it to
+        //       the checkers
+        var diffFiles    []reviewdata.FileDiff
+
+        if (err != nil) {
+            // Can't retrieve any files, skip this review
+            fmt.Printf("Could not find any files: %s\n", err)
+        } else {
+            for _, element := range diff.Files {
+                _, fileDiff := GetFileDiff(element.Links)
+
+                if (!excludeFileRegex.MatchString(fileDiff.Filename)) {
+                    fileDiff.Id = element.Id
+                    diffFiles   = append(diffFiles, fileDiff)
+                }
             }
+
+            // Create the review reply before processing anything, so we can populate it
+            // with comments in parallel
+            var responseIdStr = CreateReviewReply(reviewId)
+
+            // Comment on the files
+            commentsMade, extraComment := RunCheckersAndComment(reviewId,
+                                                                responseIdStr,
+                                                                populatedRequest,
+                                                                &diffFiles,
+                                                                reviewPlugins)
+
+            PublishReview(reviewId,
+                          responseIdStr,
+                          populatedRequest.Requester,
+                          (commentsMade > 0),
+                          extraComment,
+                          populatedRequest.SeenBefore)
+
+            // Store the fact that we've now reviewed this
+            db.KvPut("RLD" + reviewId, populatedRequest.Links.Latest_Diff.Href)
+
+            // Also store some fun stats
+            db.KvIncr("reviewsDone", 1)
+            db.KvIncr("commentsMade", commentsMade)
         }
-
-        // Create the review reply before processing anything, so we can populate it
-        // with comments in parallel
-        var responseIdStr = CreateReviewReply(reviewId)
-
-        // Comment on the files
-        commentsMade = int(RunCheckersAndComment(reviewId,
-                                                 responseIdStr,
-                                                 &diffFiles,
-                                                 reviewPlugins))
-
-        //TODO - allow checkers to populate the extra comment
-        var extraComment string = "TODO"
-
-        PublishReview(reviewId,
-                      responseIdStr,
-                      populatedRequest.Requester,
-                      (commentsMade > 0),
-                      extraComment,
-                      populatedRequest.SeenBefore)
-
-        //TODO - store stats
     }
 
     var result reviewdata.ReviewResult

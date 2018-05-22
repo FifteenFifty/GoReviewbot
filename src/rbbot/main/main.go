@@ -7,7 +7,7 @@ import (
     "plugin"
     "log"
 
-    "rbbot/plugin/reviewdata"
+    "rbplugindata/reviewdata"
     "rbbot/reviewer"
 )
 

@@ -6,7 +6,7 @@ import (
     "net/http"
     "encoding/json"
 
-    "rbbot/plugin/reviewdata"
+    "rbplugindata/reviewdata"
 )
 
 /**
