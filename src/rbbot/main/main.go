@@ -6,6 +6,8 @@ import (
     "io/ioutil"
     "plugin"
     "log"
+    "encoding/json"
+    "os"
 
     "rbplugindata/reviewdata"
     "rbbot/reviewer"
@@ -18,6 +20,14 @@ type ReviewRequester interface {
     Version()       (int,int,int) // The plguin's version (major minor micro)
     CanonicalName() string // The plugin's canonical name
     Run(chan <- reviewdata.ReviewRequest) // Runs the requester
+}
+
+/**
+ * The config structure.
+ */
+type Config struct {
+    Version     string          // Config version
+    ReviewBoard json.RawMessage // Not parsed, passed to the reviewer to parse
 }
 
 /**
@@ -87,17 +97,35 @@ func RunRequestPlugins(pluginDir         string,
     return success
 }
 
+/**
+ * Loads configuration.
+ */
+func LoadConfig (configFile string) Config {
+    var config Config
+
+    cfgFile, err := os.Open(configFile)
+    defer cfgFile.Close()
+
+    if (err != nil) {
+        log.Fatal(err)
+    }
+    jsonParser := json.NewDecoder(cfgFile)
+    jsonParser.Decode(&config)
+    return config
+}
 
 func main() {
     fmt.Println("This is main")
 
     cfgFilePtr := flag.String("cfgFile",
-                              "",
+                              "./config.json",
                               "Location of the config file to read")
 
     flag.Parse()
 
     fmt.Printf("Config file location: %s\n", *cfgFilePtr)
+
+    config := LoadConfig(*cfgFilePtr)
 
     // A channel into which review requests are placed for reviewing
     reviewRequests := make(chan reviewdata.ReviewRequest)
@@ -107,5 +135,5 @@ func main() {
     }
 
     // Set the reviewer going
-    reviewer.Go(reviewRequests)
+    reviewer.Go(config.ReviewBoard, reviewRequests)
 }

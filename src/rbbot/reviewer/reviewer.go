@@ -20,8 +20,7 @@ import (
 )
 
 var (
-    rbApi   string
-    rbToken string
+    config RbConfig
 )
 
 /**
@@ -85,7 +84,7 @@ type ReviewerPlugin interface {
 func GetDiffedFiles(link string) (error, DiffFileContainer) {
     req, err := http.NewRequest("GET", link + "/files/", nil)
 
-    req.Header.Add("Authorization", rbToken)
+    req.Header.Add("Authorization", config.RbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -121,7 +120,7 @@ func GetDiffedFiles(link string) (error, DiffFileContainer) {
 func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
     req, err := http.NewRequest("GET", links.Self.Href, nil)
 
-    req.Header.Add("Authorization", rbToken)
+    req.Header.Add("Authorization", config.RbToken)
     req.Header.Add("Accept",
                    "application/vnd.reviewboard.org.diff.data+json")
 
@@ -175,7 +174,7 @@ func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
 func GetRawFile(link string) (error, []byte) {
     req, err := http.NewRequest("GET", link, nil)
 
-    req.Header.Add("Authorization", rbToken)
+    req.Header.Add("Authorization", config.RbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -199,7 +198,7 @@ func GetRawFile(link string) (error, []byte) {
 func GetFileData(link string) (error, ReviewFileData) {
     req, err := http.NewRequest("GET", link, nil)
 
-    req.Header.Add("Authorization", rbToken)
+    req.Header.Add("Authorization", config.RbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -405,12 +404,12 @@ func CreateReviewReply (reviewId string) string {
 
     w.Close()
 
-    var reviewUrl string = rbApi + "/review-requests/" + reviewId + "/reviews/"
+    var reviewUrl string = config.RbApiUrl + "/review-requests/" + reviewId + "/reviews/"
 
     // Post a new blank review, to which we will add comments
     req, err := http.NewRequest("POST", reviewUrl, &b)
 
-    req.Header.Add("Authorization", rbToken)
+    req.Header.Add("Authorization", config.RbToken)
     req.Header.Set("Content-Type",
                    w.FormDataContentType())
 
@@ -544,7 +543,7 @@ func SendFileComments (reviewId               string,
                                             reviewCommentUrl,
                                             &commentBuffer)
 
-                req.Header.Add("Authorization", rbToken)
+                req.Header.Add("Authorization", config.RbToken)
                 req.Header.Set("Content-Type",
                                commentWriter.FormDataContentType())
 
@@ -598,10 +597,10 @@ func PublishReview(reviewId      string,
         log.Fatal(err)
     }
 
-    var topComment string = GenerateTopComment(requester,
+    var topComment string = GenerateTopComment(seenBefore,
+                                               requester,
                                                commented,
-                                               extraComment,
-                                               seenBefore)
+                                               extraComment)
 
     if _, err = cfw.Write([]byte(topComment)); err != nil {
         log.Fatal(err)
@@ -617,14 +616,14 @@ func PublishReview(reviewId      string,
         log.Fatal(err)
     }
 
-    if (!seenBefore) {
+    if (!seenBefore && config.Comments.Bottom.NewReview != "") {
         cfw, err = publishWriter.CreateFormField("body_bottom")
 
         if err != nil {
             log.Fatal(err)
         }
 
-        if _, err = cfw.Write([]byte(GenerateBottomComment())); err != nil {
+        if _, err = cfw.Write([]byte(config.Comments.Bottom.NewReview)); err != nil {
             log.Fatal(err)
         }
 
@@ -650,7 +649,7 @@ func PublishReview(reviewId      string,
     // Update the review to publish
     req, err := http.NewRequest("PUT", reviewUrl, &publishBuffer)
 
-    req.Header.Add("Authorization", rbToken)
+    req.Header.Add("Authorization", config.RbToken)
     req.Header.Set("Content-Type",
                    publishWriter.FormDataContentType())
 
@@ -677,7 +676,7 @@ func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
                                 "review-requests/" + reviewId + "/",
                                 nil)
 
-    req.Header.Add("Authorization", rbToken)
+    req.Header.Add("Authorization", config.RbToken)
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -840,14 +839,32 @@ func LoadReviewerPlugins(pluginDir string) ([]ReviewerPlugin, error) {
 }
 
 /**
+ * Configures the reviewer, given its config block.
+ *
+ * @param config A raw json message containing config.
+ *
+ * @retval error Error status
+ */
+func Configure(rawConfig json.RawMessage) error {
+    err := json.Unmarshal(rawConfig, &config)
+
+    return err
+}
+
+/**
  * Runs the reviewer. Blocks on the reviewReqs channel, handling reviews as they
  * come in.
  *
  * @param reviewReqs A channel through which review requests are received.
  */
-func Go(reviewReqs <-chan reviewdata.ReviewRequest) {
-    rbApi   = "http://reviews.example.com/api"
-    rbToken = "token 940121df848fabb83c5b02a66b6ed1da513c78ff"
+func Go(rawConfig  json.RawMessage,
+        reviewReqs <-chan reviewdata.ReviewRequest) {
+
+    err := Configure(rawConfig)
+
+    if (err != nil) {
+        log.Fatal(err)
+    }
 
     plugins, err := LoadReviewerPlugins("./plugins/review")
 
