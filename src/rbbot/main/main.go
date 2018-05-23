@@ -11,6 +11,7 @@ import (
 
     "rbplugindata/reviewdata"
     "rbbot/reviewer"
+    "rbbot/db"
 )
 
 /**
@@ -27,6 +28,8 @@ type ReviewRequester interface {
  */
 type Config struct {
     Version     string          // Config version
+    PluginPath  string          // Path under which plugins exist
+    DbPath      string          // String to the sqlite database
     ReviewBoard json.RawMessage // Not parsed, passed to the reviewer to parse
 }
 
@@ -115,6 +118,9 @@ func LoadConfig (configFile string) Config {
 }
 
 func main() {
+    // Enable better logging
+    log.SetFlags(log.LstdFlags | log.Lshortfile)
+
     fmt.Println("This is main")
 
     cfgFilePtr := flag.String("cfgFile",
@@ -127,13 +133,18 @@ func main() {
 
     config := LoadConfig(*cfgFilePtr)
 
+    // Let the db component know where its database lives
+    db.Configure(config.DbPath)
+
     // A channel into which review requests are placed for reviewing
     reviewRequests := make(chan reviewdata.ReviewRequest)
 
-    if (!RunRequestPlugins("./plugins/request", reviewRequests)) {
+    if (!RunRequestPlugins(config.PluginPath + "/request", reviewRequests)) {
         log.Fatal("Failed to load request plugins")
     }
 
     // Set the reviewer going
-    reviewer.Go(config.ReviewBoard, reviewRequests)
+    reviewer.Go(config.PluginPath + "/review",
+                config.ReviewBoard,
+                reviewRequests)
 }

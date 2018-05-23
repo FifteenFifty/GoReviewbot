@@ -17,4 +17,5 @@ type RbConfig struct {
             SeenReview string
         }
     }
+    ExclusionRegexes []string
 }

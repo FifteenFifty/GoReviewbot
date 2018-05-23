@@ -14,13 +14,16 @@ import (
         "regexp"
         "plugin"
         "errors"
+        "strings"
 
         "rbbot/db"
         "rbplugindata/reviewdata"
 )
 
 var (
-    config RbConfig
+    config             RbConfig
+    fileExclusionRegex *regexp.Regexp
+    fileExclusionsSet  bool
 )
 
 /**
@@ -733,10 +736,6 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
         // Pick up the review's diffs
         err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
 
-        excludeFileRegex := regexp.MustCompile("TODO - implement")
-
-        //TODO - configuration to pick stuff out of the review title, and pass it to
-        //       the checkers
         var diffFiles    []reviewdata.FileDiff
 
         if (err != nil) {
@@ -746,7 +745,7 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
             for _, element := range diff.Files {
                 _, fileDiff := GetFileDiff(element.Links)
 
-                if (!excludeFileRegex.MatchString(fileDiff.Filename)) {
+                if (!fileExclusionRegex.MatchString(fileDiff.Filename)) {
                     fileDiff.Id = element.Id
                     diffFiles   = append(diffFiles, fileDiff)
                 }
@@ -848,6 +847,17 @@ func LoadReviewerPlugins(pluginDir string) ([]ReviewerPlugin, error) {
 func Configure(rawConfig json.RawMessage) error {
     err := json.Unmarshal(rawConfig, &config)
 
+    // Build the file exclusion regex
+    if (len(config.ExclusionRegexes) > 0) {
+        fileExclusionRegex = regexp.MustCompile(
+                                strings.Join(
+                                    config.ExclusionRegexes,
+                                    "|"))
+        fileExclusionsSet = true
+    } else {
+        fileExclusionsSet = false
+    }
+
     return err
 }
 
@@ -855,18 +865,24 @@ func Configure(rawConfig json.RawMessage) error {
  * Runs the reviewer. Blocks on the reviewReqs channel, handling reviews as they
  * come in.
  *
+ * @param pluginPath The path to the directory in which reviewer plugins shall
+ *                   be found.
+ * @param rawConfig  A json-encoded struct containing reviewer configuration.
  * @param reviewReqs A channel through which review requests are received.
  */
-func Go(rawConfig  json.RawMessage,
+func Go(pluginPath string,
+        rawConfig  json.RawMessage,
         reviewReqs <-chan reviewdata.ReviewRequest) {
 
     err := Configure(rawConfig)
+
+    fmt.Printf("Reviewer config: %+v\n", config)
 
     if (err != nil) {
         log.Fatal(err)
     }
 
-    plugins, err := LoadReviewerPlugins("./plugins/review")
+    plugins, err := LoadReviewerPlugins(pluginPath)
 
     if (err != nil) {
         log.Fatal(err)

@@ -1,5 +1,7 @@
 {
     "version": "1.0.0",
+    "pluginPath": "./plugins",
+    "dbPath": "./db/db.sqlite3",
     "reviewBoard": {
         "rbApiUrl": "http://reviews.example.com/api",
         "rbToken":  "token 940121df848fabb83c5b02a66b6ed1da513c78ff",
@@ -12,6 +14,9 @@
             "bottom": {
                 "newReview": "This is a work in progress"
             }
-        }
+        },
+        "exclusionRegexes": [
+            "/third-party/"
+        ]
     }
 }

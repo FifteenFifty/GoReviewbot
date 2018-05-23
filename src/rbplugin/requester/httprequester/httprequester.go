@@ -2,9 +2,10 @@
 package main
 
 import (
+    "encoding/json"
     "fmt"
     "net/http"
-    "encoding/json"
+    "strconv"
 
     "rbplugindata/reviewdata"
 )
@@ -20,7 +21,7 @@ type Requester struct {
  */
 type Payload struct {
     Secret   string
-    ReviewId string
+    ReviewId int
 }
 
 /**
@@ -54,11 +55,12 @@ func (p Requester) Run(reviewRequests chan <- reviewdata.ReviewRequest) {
 
                         if (err != nil) {
                             fmt.Printf("Failed to decode response: %s\n", err)
-                        } else if (payload.ReviewId != "") {
+                        } else if (payload.Secret == "ytfiFneetfiF" &&
+                                   payload.ReviewId != 0) {
 
                             var reviewReq reviewdata.ReviewRequest
 
-                            reviewReq.ReviewId = payload.ReviewId
+                            reviewReq.ReviewId = strconv.Itoa(payload.ReviewId)
 
                             reviewRequests <- reviewReq
                         } else {

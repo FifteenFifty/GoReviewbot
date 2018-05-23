@@ -9,6 +9,18 @@ import (
     _ "github.com/mattn/go-sqlite3"
 )
 
+var (
+    dbPath string
+)
+
+/**
+ * Configures the database.
+ */
+func Configure(dbPathStr string) {
+    dbPath = dbPathStr
+    fmt.Println("DB: Configured db path as: " + dbPath)
+}
+
 /**
  * Retrieves a value from the key/value store.
  *
@@ -19,7 +31,7 @@ import (
 func KvGet(key string) (string, bool) {
     var success bool = true
 
-    db, err := sql.Open("sqlite3", "db/db.sqlite3")
+    db, err := sql.Open("sqlite3", dbPath)
 
     if (err != nil) {
         log.Fatal(err)
@@ -58,7 +70,7 @@ func KvGet(key string) (string, bool) {
 func KvPut(key string, value string) bool {
     var success bool = true
 
-    db, err := sql.Open("sqlite3", "db/db.sqlite3")
+    db, err := sql.Open("sqlite3", dbPath)
 
     if (err != nil) {
         log.Fatal(err)
@@ -109,7 +121,7 @@ func KvIncr(key string, incr int) {
 
     var intVal int = 0
 
-    if (!found) {
+    if (found) {
         shadowedIntVal, err := strconv.Atoi(currentVal)
         if (err != nil) {
             log.Fatal(err)
