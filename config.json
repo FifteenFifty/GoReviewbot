@@ -4,7 +4,7 @@
     "dbPath": "./db/db.sqlite3",
     "reviewBoard": {
         "rbApiUrl": "http://reviews.example.com/api",
-        "rbToken":  "token 940121df848fabb83c5b02a66b6ed1da513c78ff",
+        "rbToken":  "token 9ebba7340ba508c40cd8254d695f4299346a2f0b",
         "comments": {
             "top": {
                 "newReview":     "This is an automatic review, requested by: ",

@@ -674,10 +674,12 @@ func PublishReview(reviewId      string,
  * @retval error, string Any error that occurred, and the review request.
  */
 func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
+    var url string = config.RbApiUrl + "/review-requests/" + reviewId + "/"
     req, err := http.NewRequest("GET",
-                                "http://reviews.example.com/api/" +
-                                "review-requests/" + reviewId + "/",
+                                url,
                                 nil)
+
+    fmt.Printf("URL: %s\n", url)
 
     req.Header.Add("Authorization", config.RbToken)
 
@@ -699,6 +701,7 @@ func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
     err = json.Unmarshal(body, &review)
 
     if (err != nil) {
+        fmt.Printf("%s\n", body)
         log.Fatal(err)
     }
 
