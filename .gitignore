@@ -1,0 +1,8 @@
+.gitignore
+bin/*
+db/db.sqlite3
+main
+pkg/*
+plugins/*
+src/github.com/*
+*.so
