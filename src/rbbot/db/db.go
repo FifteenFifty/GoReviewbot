@@ -68,6 +68,8 @@ func KvGet(key string) (string, bool) {
  * @retval bool Whether the value was successfully added.
  */
 func KvPut(key string, value string) bool {
+    //TODO - mutex this because it can be called from multiple goroutines
+    //simultaneously
     var success bool = true
 
     db, err := sql.Open("sqlite3", dbPath)

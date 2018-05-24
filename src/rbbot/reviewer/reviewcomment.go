@@ -6,15 +6,14 @@ func GenerateTopComment(seenBefore   bool,
                         extraComment string) string {
     var comment string
 
-    if (!commented) {
-        comment = config.Comments.Top.PerfectReview + "\n\n"
+    if (seenBefore) {
+        comment = config.Comments.Top.SeenBefore + "\n\n"
     } else {
-        if (seenBefore) {
-            comment = config.Comments.Top.SeenBefore
-        } else {
-            comment = config.Comments.Top.NewReview
-        } 
-        comment += " " + requester + "\n\n"
+        comment = config.Comments.Top.NewReview + "\n\n"
+    }
+
+    if (!commented) {
+        comment += config.Comments.Top.PerfectReview + "\n\n"
     }
 
     if (extraComment != "") {

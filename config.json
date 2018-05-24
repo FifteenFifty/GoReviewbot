@@ -4,19 +4,25 @@
     "dbPath": "./db/db.sqlite3",
     "reviewBoard": {
         "rbApiUrl": "http://reviews.example.com/api",
-        "rbToken":  "token 9ebba7340ba508c40cd8254d695f4299346a2f0b",
+        "rbToken":  "token b9904766348be03c01b9e2d2bf02d1809b436686",
         "comments": {
             "top": {
-                "newReview":     "This is an automatic review, requested by: ",
-                "seenBefore":    "Auto-review",
+                "newReview":     "This is an automatic review",
+                "seenBefore":    "Auto-review | [Contribute](https://github.com/FifteenFifty/GoReviewbot)",
                 "perfectReview": "All files look good to me"
             },
             "bottom": {
                 "newReview": "This is a work in progress"
             }
         },
-        "exclusionRegexes": [
-            "/third-party/"
-        ]
+        "exclusionRegexes": {
+            "file": [
+                "/third-party/"
+            ],
+            "reviewTitle": [
+                "\\[RFC\\]",
+                "NOBOT"
+            ]
+        }
     }
 }

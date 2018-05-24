@@ -21,9 +21,11 @@ import (
 )
 
 var (
-    config             RbConfig
-    fileExclusionRegex *regexp.Regexp
-    fileExclusionsSet  bool
+    config                     RbConfig
+    fileExclusionRegex        *regexp.Regexp
+    fileExclusionsSet          bool
+    reviewTitleExclusionRegex *regexp.Regexp
+    reviewTitleExclusionSet    bool
 )
 
 /**
@@ -87,6 +89,8 @@ type ReviewerPlugin interface {
 func GetDiffedFiles(link string) (error, DiffFileContainer) {
     req, err := http.NewRequest("GET", link + "/files/", nil)
 
+    fmt.Printf("URL: %s\n", link + "/files/")
+
     req.Header.Add("Authorization", config.RbToken)
 
     resp, err := (&http.Client{}).Do(req)
@@ -104,14 +108,10 @@ func GetDiffedFiles(link string) (error, DiffFileContainer) {
 
     var diffFiles DiffFileContainer
 
-    if (json.Valid(body)) {
-        err := json.Unmarshal(body, &diffFiles)
+    err = json.Unmarshal(body, &diffFiles)
 
-        if err != nil {
-            log.Fatal(err)
-        }
-    } else {
-        fmt.Printf("Invalid json\n")
+    if err != nil {
+        log.Fatal(err)
     }
 
     return err, diffFiles
@@ -142,14 +142,10 @@ func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
 
     var file reviewdata.FileDiff
 
-    if (json.Valid(body)) {
-        err := json.Unmarshal(body, &file)
+    err = json.Unmarshal(body, &file)
 
-        if err != nil {
-            log.Fatal(err)
-        }
-    } else {
-        fmt.Printf("Invalid json\n")
+    if err != nil {
+        log.Fatal(err)
     }
 
     err, reviewFileData := GetFileData(links.Self.Href)
@@ -427,14 +423,10 @@ func CreateReviewReply (reviewId string) string {
 
     var reviewResponse ReviewResponse
 
-    if (json.Valid(body)) {
-        err := json.Unmarshal(body, &reviewResponse)
+    err = json.Unmarshal(body, &reviewResponse)
 
-        if err != nil {
-            log.Fatal(err)
-        }
-    } else {
-        fmt.Printf("Invalid json\n")
+    if err != nil {
+        log.Fatal(err)
     }
 
     var reviewResponseIdString string = strconv.Itoa(reviewResponse.Review.Id)
@@ -727,6 +719,11 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
         _, populatedRequest = GetReviewRequest(reviewId)
         populatedRequest.ResultChan = incomingReq.ResultChan
         populatedRequest.SeenBefore = incomingReq.SeenBefore
+
+        if (populatedRequest.Id == 0) {
+            // Something went wrong loading the review
+            fmt.Println("Failed to process review")
+        }
     }
 
     // Check if we've seen this diff before
@@ -735,7 +732,12 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     if (found && lastSeenDiff == populatedRequest.Links.Latest_Diff.Href) {
         // We've already reviewed this before, ignore
         fmt.Println("Ignoring already-seen diff for review " + reviewId)
-    } else {
+    } else if (reviewTitleExclusionSet &&
+               reviewTitleExclusionRegex.MatchString(
+                                                    populatedRequest.Summary)) {
+        // We've excluded this review by title
+        fmt.Println("Ignoring review by title: " + populatedRequest.Summary)
+    } else{
         // Pick up the review's diffs
         err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
 
@@ -851,14 +853,24 @@ func Configure(rawConfig json.RawMessage) error {
     err := json.Unmarshal(rawConfig, &config)
 
     // Build the file exclusion regex
-    if (len(config.ExclusionRegexes) > 0) {
+    if (len(config.ExclusionRegexes.File) > 0) {
         fileExclusionRegex = regexp.MustCompile(
                                 strings.Join(
-                                    config.ExclusionRegexes,
+                                    config.ExclusionRegexes.File,
                                     "|"))
         fileExclusionsSet = true
     } else {
         fileExclusionsSet = false
+    }
+
+    // Build the review title exclusion regex
+    if (len(config.ExclusionRegexes.ReviewTitle) > 0) {
+        reviewTitleExclusionRegex = regexp.MustCompile(
+                            strings.Join(config.ExclusionRegexes.ReviewTitle,
+                                         "|"))
+        reviewTitleExclusionSet = true
+    } else {
+        reviewTitleExclusionSet = false
     }
 
     return err
