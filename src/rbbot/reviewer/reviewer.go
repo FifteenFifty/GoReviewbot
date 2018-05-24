@@ -15,6 +15,7 @@ import (
         "plugin"
         "errors"
         "strings"
+        "time"
 
         "rbbot/db"
         "rbplugindata/reviewdata"
@@ -288,6 +289,8 @@ func CheckFileAndComment(file           reviewdata.FileDiff,
                          commentCount  *int32,
                          wg            *sync.WaitGroup,
                          reviewPlugins []ReviewerPlugin) {
+    timer := time.Now()
+
     // Count the plugins
     var numCheckers = len(reviewPlugins)
 
@@ -321,6 +324,8 @@ func CheckFileAndComment(file           reviewdata.FileDiff,
     close(comments)
 
     commentMgrWg.Wait()
+
+    fmt.Printf("Running checkers took: %s\n", time.Since(timer))
 
     // If there are comments on the file, add them to the review
     if (len(commentedFile.Comments) > 0) {
@@ -711,6 +716,8 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     reviewId := incomingReq.ReviewId
     fmt.Println("Received review request for: " + reviewId)
 
+    timer := time.Now()
+
     var populatedRequest reviewdata.ReviewRequest = incomingReq
     var commentsMade     int = 0
 
@@ -756,9 +763,14 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                 }
             }
 
+            fmt.Printf("Retrieving the review took %s\n", time.Since(timer))
+            timer = time.Now()
+
             // Create the review reply before processing anything, so we can populate it
             // with comments in parallel
             var responseIdStr = CreateReviewReply(reviewId)
+            fmt.Printf("Making the reply took %s\n", time.Since(timer))
+            timer = time.Now()
 
             // Comment on the files
             commentsMade, extraComment := RunCheckersAndComment(reviewId,
@@ -766,6 +778,8 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                                                                 populatedRequest,
                                                                 &diffFiles,
                                                                 reviewPlugins)
+            fmt.Printf("Commenting took %s\n", time.Since(timer))
+            timer = time.Now()
 
             PublishReview(reviewId,
                           responseIdStr,
@@ -774,12 +788,18 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                           extraComment,
                           populatedRequest.SeenBefore)
 
+            fmt.Printf("Publishing took %s\n", time.Since(timer))
+            timer = time.Now()
+
             // Store the fact that we've now reviewed this
             db.KvPut("RLD" + reviewId, populatedRequest.Links.Latest_Diff.Href)
 
             // Also store some fun stats
             db.KvIncr("reviewsDone", 1)
             db.KvIncr("commentsMade", commentsMade)
+
+            fmt.Printf("Databasing took %s\n", time.Since(timer))
+            timer = time.Now()
         }
     }
 
