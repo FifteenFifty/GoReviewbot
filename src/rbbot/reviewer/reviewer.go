@@ -85,14 +85,36 @@ type ReviewerPlugin interface {
 }
 
 /**
- * Retrieves diffed files for a review
+ * Additional header data that should be passed on ReviewBoard requests.
  */
-func GetDiffedFiles(link string) (error, DiffFileContainer) {
-    req, err := http.NewRequest("GET", link + "/files/", nil)
+type Header struct {
+    k string
+    v string
+}
 
-    fmt.Printf("URL: %s\n", link + "/files/")
+/**
+ * Retrieves an object from the ReviewBoard API, and umarshalls it into the
+ * passed struct.
+ *
+ * @param link       The link from which the entity shall be retrieved.
+ * @param entity     A pointer to a struct into which the received json shall be
+ *                   unmarshsalled.
+ * @param addHeaders Any headers that should be added to the request, on top of
+ *                   the ReviewBoard API token.
+ *
+ * @retval nil   If no error occurred. The entity struct will have been
+ *               populated.
+ * @retval error If an error occurred. The entity struct will not have been
+ *               populated.
+ */
+func GetEntity(link string, entity interface{}, addHeaders []Header) error {
+    req, err := http.NewRequest("GET", link, nil)
 
     req.Header.Add("Authorization", config.RbToken)
+
+    for _, header := range(addHeaders) {
+        req.Header.Add(header.k, header.v)
+    }
 
     resp, err := (&http.Client{}).Do(req)
 
@@ -107,71 +129,19 @@ func GetDiffedFiles(link string) (error, DiffFileContainer) {
         log.Fatal(err)
     }
 
-    var diffFiles DiffFileContainer
-
-    err = json.Unmarshal(body, &diffFiles)
+    err = json.Unmarshal(body, entity)
 
     if err != nil {
         log.Fatal(err)
     }
 
-    return err, diffFiles
+    return err
 }
 
 /**
- * Retrieves a single file diff from a review's file links.
+ * Retrieves a raw entity from a review, as an array of bytes.
  */
-func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
-    req, err := http.NewRequest("GET", links.Self.Href, nil)
-
-    req.Header.Add("Authorization", config.RbToken)
-    req.Header.Add("Accept",
-                   "application/vnd.reviewboard.org.diff.data+json")
-
-    resp, err := (&http.Client{}).Do(req)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
-    defer resp.Body.Close()
-
-    body, err := ioutil.ReadAll(resp.Body)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
-
-    var file reviewdata.FileDiff
-
-    err = json.Unmarshal(body, &file)
-
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    err, reviewFileData := GetFileData(links.Self.Href)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
-
-    err, entireFile := GetRawFile(links.Patched_File.Href)
-
-    if ( err != nil) {
-        log.Fatal(err)
-    }
-
-    file.Filename   = reviewFileData.File.Dest_File
-    file.EntireFile = entireFile
-
-    return err, file
-
-}
-
-/**
- * Retrieves a raw file from a review.
- */
-func GetRawFile(link string) (error, []byte) {
+func GetRawEntity(link string) (error, []byte) {
     req, err := http.NewRequest("GET", link, nil)
 
     req.Header.Add("Authorization", config.RbToken)
@@ -193,35 +163,47 @@ func GetRawFile(link string) (error, []byte) {
 }
 
 /**
- * Retrieves ancillary data about a file.
+ * Retrieves diffed files for a review
  */
-func GetFileData(link string) (error, ReviewFileData) {
-    req, err := http.NewRequest("GET", link, nil)
+func GetDiffedFiles(link string) (error, DiffFileContainer) {
+    var diffFiles DiffFileContainer
+    err := GetEntity(link + "/files/", &diffFiles, []Header{})
+    return err, diffFiles
+}
 
-    req.Header.Add("Authorization", config.RbToken)
+/**
+ * Retrieves a single file diff from a review's file links.
+ */
+func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
+    var file     reviewdata.FileDiff
+    var fileData ReviewFileData
 
-    resp, err := (&http.Client{}).Do(req)
+    err := GetEntity(links.Self.Href,
+                    &file,
+                    []Header{
+                        {k: "Accept",
+                         v: "application/vnd.reviewboard.org.diff.data+json"}})
 
-    if (err != nil) {
-        log.Fatal(err)
-    }
-    defer resp.Body.Close()
-
-    body, err := ioutil.ReadAll(resp.Body)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
-
-    var rfd ReviewFileData
-
-    err = json.Unmarshal(body, &rfd)
-
-    if (err != nil) {
+    if err != nil {
         log.Fatal(err)
     }
 
-    return err, rfd
+    err = GetEntity(links.Self.Href, &fileData, []Header{})
+
+    if ( err != nil) {
+        log.Fatal(err)
+    }
+
+    err, entireFile := GetRawEntity(links.Patched_File.Href)
+
+    if ( err != nil) {
+        log.Fatal(err)
+    }
+
+    file.Filename   = fileData.File.Dest_File
+    file.EntireFile = entireFile
+
+    return err, file
 }
 
 /**
@@ -247,30 +229,27 @@ func ManageComments(inChan <- chan reviewdata.Comment,
 
         var added bool = false
 
-        if _, exists := (*outComments).Comments[comment.Line]; exists {
-            if (len((*outComments).Comments[comment.Line]) == 0) {
-                (*outComments).Comments[comment.Line] =
-                    append((*outComments).Comments[comment.Line], &comment)
+        commentList, exists := (*outComments).Comments[comment.Line]
+
+        if (exists) {
+            if (len(commentList) == 0) {
+                commentList = append(commentList, &comment)
                 added = true
             } else {
-                for i := 0;
-                    i < len((*outComments).Comments[comment.Line]);
-                    i++ {
-                    if ((*outComments).Comments[comment.Line][i].NumLines ==
-                        comment.NumLines) {
-                        (*outComments).Comments[comment.Line][i].Text += "\n\n" +
-                                                                    comment.Text
+                for i := 0; i < len(commentList); i++ {
+                    if (commentList[i].NumLines == comment.NumLines) {
+
+                        commentList[i].Text += "\n\n" + comment.Text
                         if (comment.RaiseIssue) {
-                            (*outComments).Comments[comment.Line][i].
-                                           RaiseIssue = true
+                            commentList[i].RaiseIssue = true
                         }
+
                         added = true
                     }
                 }
 
                 if (!added) {
-                    (*outComments).Comments[comment.Line] =
-                        append((*outComments).Comments[comment.Line], &comment)
+                    commentList = append(commentList, &comment)
                 }
             }
         } else {
@@ -672,35 +651,10 @@ func PublishReview(reviewId      string,
  */
 func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
     var url string = config.RbApiUrl + "/review-requests/" + reviewId + "/"
-    req, err := http.NewRequest("GET",
-                                url,
-                                nil)
-
-    fmt.Printf("URL: %s\n", url)
-
-    req.Header.Add("Authorization", config.RbToken)
-
-    resp, err := (&http.Client{}).Do(req)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
-    defer resp.Body.Close()
-
-    body, err := ioutil.ReadAll(resp.Body)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
 
     var review ReviewContainer
 
-    err = json.Unmarshal(body, &review)
-
-    if (err != nil) {
-        fmt.Printf("%s\n", body)
-        log.Fatal(err)
-    }
+    err := GetEntity(url, &review, []Header{})
 
     return err, review.Review_Request
 }

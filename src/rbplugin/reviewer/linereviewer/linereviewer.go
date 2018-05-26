@@ -15,7 +15,7 @@ func CheckLength(diffChunk   reviewdata.DiffChunk,
     comment.NumLines = 0
 
     for _, line := range diffChunk.Lines {
-        if (len(line.RhText) > 80) {
+        if (len(line.RhText) > 8) {
             comment.NumLines++
 
             if (comment.NumLines == 1) {
