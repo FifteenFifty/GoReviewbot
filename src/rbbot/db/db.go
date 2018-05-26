@@ -1,16 +1,18 @@
 package db
 
 import (
-    "log"
-    "fmt"
     "database/sql"
+    "fmt"
+    "log"
     "strconv"
+    "sync"
 
     _ "github.com/mattn/go-sqlite3"
 )
 
 var (
     dbPath string
+    mutex  sync.Mutex
 )
 
 /**
@@ -29,6 +31,11 @@ func Configure(dbPathStr string) {
  * @returns Whether the value was found and, if so, the value.
  */
 func KvGet(key string) (string, bool) {
+
+    // Probably overkill, but we mutex database access
+    mutex.Lock()
+    defer mutex.Unlock()
+
     var success bool = true
 
     db, err := sql.Open("sqlite3", dbPath)
@@ -68,8 +75,11 @@ func KvGet(key string) (string, bool) {
  * @retval bool Whether the value was successfully added.
  */
 func KvPut(key string, value string) bool {
-    //TODO - mutex this because it can be called from multiple goroutines
-    //simultaneously
+
+    // Probably overkill, but we mutex database access
+    mutex.Lock()
+    defer mutex.Unlock()
+
     var success bool = true
 
     db, err := sql.Open("sqlite3", dbPath)
