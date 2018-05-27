@@ -61,6 +61,9 @@ func (p Requester) Run(reviewRequests chan <- reviewdata.ReviewRequest) {
                             var reviewReq reviewdata.ReviewRequest
 
                             reviewReq.ReviewId = strconv.Itoa(payload.ReviewId)
+                            reviewReq.ResultChan = make(
+                                                chan reviewdata.ReviewResult,
+                                                1)
 
                             reviewRequests <- reviewReq
                         } else {

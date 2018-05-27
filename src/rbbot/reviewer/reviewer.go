@@ -119,20 +119,20 @@ func GetEntity(link string, entity interface{}, addKvStrings []KvString) error {
     resp, err := (&http.Client{}).Do(req)
 
     if (err != nil) {
-        log.Fatal(err)
+        return err
     }
     defer resp.Body.Close()
 
     body, err := ioutil.ReadAll(resp.Body)
 
     if (err != nil) {
-        log.Fatal(err)
+        return err
     }
 
     err = json.Unmarshal(body, entity)
 
     if err != nil {
-        log.Fatal(err)
+        return err
     }
 
     return err
@@ -163,7 +163,7 @@ func GetRawEntity(link string) (error, []byte) {
 }
 
 /**
- * Posts to ReviewBiard.
+ * Posts to ReviewBoard.
  *
  * @param link       The link to which data shall be posted.
  * @param args       A list of key/value pairs to be added to the post.
@@ -209,7 +209,7 @@ func Post(link string, args []KvString, respEntity interface{}) error {
     if (respEntity != nil) {
         body, _ := ioutil.ReadAll(resp.Body)
 
-        err = json.Unmarshal(body, resp)
+        err = json.Unmarshal(body, respEntity)
 
         if err != nil {
             log.Fatal(err)
@@ -465,60 +465,10 @@ func SendFileComments (reviewId               string,
     if (len(comments.Comments) > 0) {
         for line, commentList := range comments.Comments {
             for _, comment := range commentList {
-                var commentBuffer bytes.Buffer
-                commentWriter := multipart.NewWriter(&commentBuffer)
-
-                cfw, err := commentWriter.CreateFormField("filediff_id")
-
-                if err != nil {
-                    log.Fatal(err)
-                }
-
-                var commentsId string = strconv.Itoa(comments.FileId)
-
-                if _, err = cfw.Write([]byte(commentsId)); err != nil {
-                    log.Fatal(err)
-                }
-
-                cfw, err = commentWriter.CreateFormField("first_line")
-
-                if err != nil {
-                    log.Fatal(err)
-                }
-
+                var commentsId  string = strconv.Itoa(comments.FileId)
                 var commentLine string = strconv.Itoa(line)
-
-                if _, err = cfw.Write([]byte(commentLine)); err != nil {
-                    log.Fatal(err)
-                }
-
-                cfw, err = commentWriter.CreateFormField("num_lines")
-
-                if err != nil {
-                    log.Fatal(err)
-                }
-
-                if _, err = cfw.Write([]byte("1")); err != nil {
-                    log.Fatal(err)
-                }
-
-                cfw, err = commentWriter.CreateFormField("text")
-
-                if err != nil {
-                    log.Fatal(err)
-                }
-
-                if _, err = cfw.Write([]byte(comment.Text)); err != nil {
-                    log.Fatal(err)
-                }
-
-                cfw, err = commentWriter.CreateFormField("issue_opened")
-
-                if err != nil {
-                    log.Fatal(err)
-                }
-
-                var raiseIssue string
+                var numLines    string = strconv.Itoa(comment.NumLines)
+                var raiseIssue  string
 
                 if (comment.RaiseIssue) {
                     raiseIssue = "true"
@@ -526,45 +476,20 @@ func SendFileComments (reviewId               string,
                     raiseIssue = "false"
                 }
 
-                if _, err = cfw.Write([]byte(raiseIssue)); err != nil {
-                    log.Fatal(err)
-                }
-
-                cfw, err = commentWriter.CreateFormField("text")
-
-                if err != nil {
-                    log.Fatal(err)
-                }
-
-                if _, err = cfw.Write([]byte(comment.Text)); err != nil {
-                    log.Fatal(err)
-                }
-
-                commentWriter.Close()
-
-                var reviewCommentUrl string = "http://reviews.example.com/api/review-requests/" +
+                var reviewCommentUrl string = config.RbApiUrl +
+                                              "/review-requests/" +
                                               reviewId +
                                               "/reviews/" +
                                               reviewResponseIdString +
                                               "/diff-comments/"
 
-                // Post the comments
-                req, err := http.NewRequest("POST",
-                                            reviewCommentUrl,
-                                            &commentBuffer)
-
-                req.Header.Add("Authorization", config.RbToken)
-                req.Header.Set("Content-Type",
-                               commentWriter.FormDataContentType())
-
-                resp, err := (&http.Client{}).Do(req)
-
-                if (err != nil) {
-                    log.Fatal(err)
-                }
-                defer resp.Body.Close()
-
-                //TODO - error handling
+                Post(reviewCommentUrl,
+                     []KvString{{k: "filediff_id",  v: commentsId},
+                                {k: "first_line",   v: commentLine},
+                                {k: "num_lines",    v: numLines},
+                                {k: "text",         v: comment.Text},
+                                {k: "issue_opened", v: raiseIssue}},
+                     nil)
             }
         }
     }
@@ -678,16 +603,18 @@ func PublishReview(reviewId      string,
  *
  * @param reviewId The review ID
  *
- * @retval error, string Any error that occurred, and the review request.
+ * @retval Any error that occurred, and the review request.
  */
-func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
+func GetReviewRequest(reviewId string) (reviewdata.ReviewRequest, error) {
     var url string = config.RbApiUrl + "/review-requests/" + reviewId + "/"
 
     var review ReviewContainer
 
     err := GetEntity(url, &review, []KvString{})
 
-    return err, review.Review_Request
+    fmt.Printf("Entity: %+v\n", review)
+
+    return review.Review_Request, err
 }
 
 /**
@@ -705,92 +632,100 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
 
     var populatedRequest reviewdata.ReviewRequest = incomingReq
     var commentsMade     int = 0
+    var err              error
 
     // If we've not already filled in the request, do that
     if (incomingReq.Id == 0) {
-        _, populatedRequest = GetReviewRequest(reviewId)
+        populatedRequest, err = GetReviewRequest(reviewId)
+
         populatedRequest.ResultChan = incomingReq.ResultChan
         populatedRequest.SeenBefore = incomingReq.SeenBefore
 
-        if (populatedRequest.Id == 0) {
+        if (err != nil) {
             // Something went wrong loading the review
             fmt.Println("Failed to process review")
+            fmt.Println(err)
         }
     }
 
     // Check if we've seen this diff before
     lastSeenDiff, found := db.KvGet("RLD" + reviewId)
 
-    if (found && lastSeenDiff == populatedRequest.Links.Latest_Diff.Href) {
-        // We've already reviewed this before, ignore
-        fmt.Println("Ignoring already-seen diff for review " + reviewId)
-    } else if (reviewTitleExclusionSet &&
-               reviewTitleExclusionRegex.MatchString(
-                                                    populatedRequest.Summary)) {
-        // We've excluded this review by title
-        fmt.Println("Ignoring review by title: " + populatedRequest.Summary)
-    } else{
-        // Pick up the review's diffs
-        err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
-
-        var diffFiles    []reviewdata.FileDiff
-
-        if (err != nil) {
-            // Can't retrieve any files, skip this review
-            fmt.Printf("Could not find any files: %s\n", err)
+    if (populatedRequest.Id != 0) {
+        if (found && lastSeenDiff == populatedRequest.Links.Latest_Diff.Href) {
+            // We've already reviewed this before, ignore
+            fmt.Println("Ignoring already-seen diff for review " + reviewId)
+        } else if (reviewTitleExclusionSet &&
+                   reviewTitleExclusionRegex.MatchString(
+                                                        populatedRequest.Summary)) {
+            // We've excluded this review by title
+            fmt.Println("Ignoring review by title: " + populatedRequest.Summary)
         } else {
-            for _, element := range diff.Files {
-                _, fileDiff := GetFileDiff(element.Links)
+            // Pick up the review's diffs
+            err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
 
-                if (!fileExclusionRegex.MatchString(fileDiff.Filename)) {
-                    fileDiff.Id = element.Id
-                    diffFiles   = append(diffFiles, fileDiff)
+            var diffFiles    []reviewdata.FileDiff
+
+            if (err != nil) {
+                // Can't retrieve any files, skip this review
+                fmt.Printf("Could not find any files: %s\n", err)
+            } else {
+                for _, element := range diff.Files {
+                    _, fileDiff := GetFileDiff(element.Links)
+
+                    if (!fileExclusionRegex.MatchString(fileDiff.Filename)) {
+                        fileDiff.Id = element.Id
+                        diffFiles   = append(diffFiles, fileDiff)
+                    }
                 }
+
+                fmt.Printf("Retrieving the review took %s\n", time.Since(timer))
+                timer = time.Now()
+
+                // Create the review reply before processing anything, so we can populate it
+                // with comments in parallel
+                var responseIdStr = CreateReviewReply(reviewId)
+                fmt.Printf("Making the reply took %s\n", time.Since(timer))
+                timer = time.Now()
+
+                // Comment on the files
+                commentsMade, extraComment := RunCheckersAndComment(reviewId,
+                                                                    responseIdStr,
+                                                                    populatedRequest,
+                                                                    &diffFiles,
+                                                                    reviewPlugins)
+                fmt.Printf("Commenting took %s\n", time.Since(timer))
+                timer = time.Now()
+
+                PublishReview(reviewId,
+                              responseIdStr,
+                              populatedRequest.Requester,
+                              (commentsMade > 0),
+                              extraComment,
+                              populatedRequest.SeenBefore)
+
+                fmt.Printf("Publishing took %s\n", time.Since(timer))
+                timer = time.Now()
+
+                // Store the fact that we've now reviewed this
+                db.KvPut("RLD" + reviewId, populatedRequest.Links.Latest_Diff.Href)
+
+                // Also store some fun stats
+                db.KvIncr("reviewsDone", 1)
+                db.KvIncr("commentsMade", commentsMade)
+
+                fmt.Printf("Databasing took %s\n", time.Since(timer))
+                timer = time.Now()
             }
-
-            fmt.Printf("Retrieving the review took %s\n", time.Since(timer))
-            timer = time.Now()
-
-            // Create the review reply before processing anything, so we can populate it
-            // with comments in parallel
-            var responseIdStr = CreateReviewReply(reviewId)
-            fmt.Printf("Making the reply took %s\n", time.Since(timer))
-            timer = time.Now()
-
-            // Comment on the files
-            commentsMade, extraComment := RunCheckersAndComment(reviewId,
-                                                                responseIdStr,
-                                                                populatedRequest,
-                                                                &diffFiles,
-                                                                reviewPlugins)
-            fmt.Printf("Commenting took %s\n", time.Since(timer))
-            timer = time.Now()
-
-            PublishReview(reviewId,
-                          responseIdStr,
-                          populatedRequest.Requester,
-                          (commentsMade > 0),
-                          extraComment,
-                          populatedRequest.SeenBefore)
-
-            fmt.Printf("Publishing took %s\n", time.Since(timer))
-            timer = time.Now()
-
-            // Store the fact that we've now reviewed this
-            db.KvPut("RLD" + reviewId, populatedRequest.Links.Latest_Diff.Href)
-
-            // Also store some fun stats
-            db.KvIncr("reviewsDone", 1)
-            db.KvIncr("commentsMade", commentsMade)
-
-            fmt.Printf("Databasing took %s\n", time.Since(timer))
-            timer = time.Now()
         }
+    } else {
+        fmt.Println("Could not retrieve the review request")
     }
 
     var result reviewdata.ReviewResult
     result.NumComments = int(commentsMade)
     populatedRequest.ResultChan <- result
+    fmt.Printf("All done.")
 }
 
 /**
