@@ -163,17 +163,21 @@ func GetRawEntity(link string) (error, []byte) {
 }
 
 /**
- * Posts to ReviewBoard.
+ * Sends a request to ReviewBoard.
  *
- * @param link       The link to which data shall be posted.
- * @param args       A list of key/value pairs to be added to the post.
+ * @param method     The rquest method.
+ * @param link       The resource to which data shall be sent.
+ * @param args       A list of key/value pairs to be added to the request.
  * @param respEntity A pointer to a struct into which the response should be
  *                   decoded. If this is nil, the response is not decoded.
  *
- * @retval nil   If the post was successful.
- * @retval error The error that occurred, if the post was unsuccessful.
+ * @retval nil   If the request was successful.
+ * @retval error The error that occurred, if the request was unsuccessful.
  */
-func Post(link string, args []KvString, respEntity interface{}) error {
+func SendRequest(method     string,
+                 link       string,
+                 args       []KvString,
+                 respEntity interface{}) error {
     var b bytes.Buffer
 
     w := multipart.NewWriter(&b)
@@ -194,7 +198,7 @@ func Post(link string, args []KvString, respEntity interface{}) error {
 
     w.Close()
 
-    req, err := http.NewRequest("POST", link, &b)
+    req, err := http.NewRequest(method, link, &b)
 
     req.Header.Add("Authorization", config.RbToken)
     req.Header.Set("Content-Type", w.FormDataContentType())
@@ -436,9 +440,10 @@ func CreateReviewReply (reviewId string) string {
 
     var reviewResponse ReviewResponse
 
-    err := Post(reviewUrl,
-                []KvString{{k: "body_top", v: "This is a test review"}},
-                &reviewResponse)
+    err := SendRequest("POST",
+                       reviewUrl,
+                       []KvString{{k: "body_top", v: "This is a test review"}},
+                       &reviewResponse)
 
     if (err != nil) {
         log.Fatal(err)
@@ -483,13 +488,14 @@ func SendFileComments (reviewId               string,
                                               reviewResponseIdString +
                                               "/diff-comments/"
 
-                Post(reviewCommentUrl,
-                     []KvString{{k: "filediff_id",  v: commentsId},
-                                {k: "first_line",   v: commentLine},
-                                {k: "num_lines",    v: numLines},
-                                {k: "text",         v: comment.Text},
-                                {k: "issue_opened", v: raiseIssue}},
-                     nil)
+                SendRequest("POST",
+                            reviewCommentUrl,
+                            []KvString{{k: "filediff_id",  v: commentsId},
+                                       {k: "first_line",   v: commentLine},
+                                       {k: "num_lines",    v: numLines},
+                                       {k: "text",         v: comment.Text},
+                                       {k: "issue_opened", v: raiseIssue}},
+                            nil)
             }
         }
     }
@@ -505,75 +511,36 @@ func SendFileComments (reviewId               string,
  * @param extraComment  A comment from any checkers which did not relate to
  *                      files.
  * @param seenBefore    Whether we've seen this review before.
+ *
+ * @retval nil   On success.
+ * @retval error If an error occurred while publishing.
  */
 func PublishReview(reviewId      string,
                    responseIdStr string,
                    requester     string,
                    commented     bool,
                    extraComment  string,
-                   seenBefore    bool) {
-
-    var publishBuffer bytes.Buffer
-    publishWriter := multipart.NewWriter(&publishBuffer)
-
-    cfw, err := publishWriter.CreateFormField("public")
-
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    if _, err = cfw.Write([]byte("1")); err != nil {
-        log.Fatal(err)
-    }
-
-    cfw, err = publishWriter.CreateFormField("body_top")
-
-    if err != nil {
-        log.Fatal(err)
-    }
+                   seenBefore    bool) error {
 
     var topComment string = GenerateTopComment(seenBefore,
                                                requester,
                                                commented,
                                                extraComment)
 
-    if _, err = cfw.Write([]byte(topComment)); err != nil {
-        log.Fatal(err)
-    }
+    var kvReq []KvString
 
-    cfw, err = publishWriter.CreateFormField("body_top_text_type")
+    kvReq = append(kvReq,
+                   KvString{k: "public",             v: "1"},
+                   KvString{k: "body_top",           v: topComment},
+                   KvString{k: "body_top_text_type", v: "markdown"})
 
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    if _, err = cfw.Write([]byte("markdown")); err != nil {
-        log.Fatal(err)
-    }
 
     if (!seenBefore && config.Comments.Bottom.NewReview != "") {
-        cfw, err = publishWriter.CreateFormField("body_bottom")
-
-        if err != nil {
-            log.Fatal(err)
-        }
-
-        if _, err = cfw.Write([]byte(config.Comments.Bottom.NewReview)); err != nil {
-            log.Fatal(err)
-        }
-
-        cfw, err = publishWriter.CreateFormField("body_bottom_text_type")
-
-        if err != nil {
-            log.Fatal(err)
-        }
-
-        if _, err = cfw.Write([]byte("markdown")); err != nil {
-            log.Fatal(err)
-        }
+        var bottomComment string = config.Comments.Bottom.NewReview
+        kvReq = append(kvReq,
+                       KvString{k: "body_bottom",           v: bottomComment},
+                       KvString{k: "body_bottom_text_type", v: "markdown"})
     }
-
-    publishWriter.Close()
 
     var reviewUrl string = "http://reviews.example.com/api/review-requests/" +
                            reviewId +
@@ -581,21 +548,11 @@ func PublishReview(reviewId      string,
                            responseIdStr +
                            "/"
 
-    // Update the review to publish
-    req, err := http.NewRequest("PUT", reviewUrl, &publishBuffer)
-
-    req.Header.Add("Authorization", config.RbToken)
-    req.Header.Set("Content-Type",
-                   publishWriter.FormDataContentType())
-
-    resp, err := (&http.Client{}).Do(req)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
-    defer resp.Body.Close()
-
-    //TODO - error handling
+    err := SendRequest("PUT",
+                       reviewUrl,
+                       kvReq,
+                       nil)
+    return err
 }
 
 /**
@@ -611,8 +568,6 @@ func GetReviewRequest(reviewId string) (reviewdata.ReviewRequest, error) {
     var review ReviewContainer
 
     err := GetEntity(url, &review, []KvString{})
-
-    fmt.Printf("Entity: %+v\n", review)
 
     return review.Review_Request, err
 }
