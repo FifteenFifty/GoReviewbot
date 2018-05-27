@@ -85,9 +85,9 @@ type ReviewerPlugin interface {
 }
 
 /**
- * Additional header data that should be passed on ReviewBoard requests.
+ * A key/value pair of strings.
  */
-type Header struct {
+type KvString struct {
     k string
     v string
 }
@@ -99,7 +99,7 @@ type Header struct {
  * @param link       The link from which the entity shall be retrieved.
  * @param entity     A pointer to a struct into which the received json shall be
  *                   unmarshsalled.
- * @param addHeaders Any headers that should be added to the request, on top of
+ * @param addKvStrings Any headers that should be added to the request, on top of
  *                   the ReviewBoard API token.
  *
  * @retval nil   If no error occurred. The entity struct will have been
@@ -107,12 +107,12 @@ type Header struct {
  * @retval error If an error occurred. The entity struct will not have been
  *               populated.
  */
-func GetEntity(link string, entity interface{}, addHeaders []Header) error {
+func GetEntity(link string, entity interface{}, addKvStrings []KvString) error {
     req, err := http.NewRequest("GET", link, nil)
 
     req.Header.Add("Authorization", config.RbToken)
 
-    for _, header := range(addHeaders) {
+    for _, header := range(addKvStrings) {
         req.Header.Add(header.k, header.v)
     }
 
@@ -163,11 +163,68 @@ func GetRawEntity(link string) (error, []byte) {
 }
 
 /**
+ * Posts to ReviewBiard.
+ *
+ * @param link       The link to which data shall be posted.
+ * @param args       A list of key/value pairs to be added to the post.
+ * @param respEntity A pointer to a struct into which the response should be
+ *                   decoded. If this is nil, the response is not decoded.
+ *
+ * @retval nil   If the post was successful.
+ * @retval error The error that occurred, if the post was unsuccessful.
+ */
+func Post(link string, args []KvString, respEntity interface{}) error {
+    var b bytes.Buffer
+
+    w := multipart.NewWriter(&b)
+
+    for _, pair := range(args) {
+        fw, err := w.CreateFormField(pair.k)
+
+        if err != nil {
+            log.Fatal(err)
+        }
+
+        _, err = fw.Write([]byte(pair.v))
+
+        if (err != nil) {
+            log.Fatal(err)
+        }
+    }
+
+    w.Close()
+
+    req, err := http.NewRequest("POST", link, &b)
+
+    req.Header.Add("Authorization", config.RbToken)
+    req.Header.Set("Content-Type", w.FormDataContentType())
+
+    resp, err := (&http.Client{}).Do(req)
+
+    if (err != nil) {
+        log.Fatal(err)
+    }
+    defer resp.Body.Close()
+
+    if (respEntity != nil) {
+        body, _ := ioutil.ReadAll(resp.Body)
+
+        err = json.Unmarshal(body, resp)
+
+        if err != nil {
+            log.Fatal(err)
+        }
+    }
+
+    return err
+}
+
+/**
  * Retrieves diffed files for a review
  */
 func GetDiffedFiles(link string) (error, DiffFileContainer) {
     var diffFiles DiffFileContainer
-    err := GetEntity(link + "/files/", &diffFiles, []Header{})
+    err := GetEntity(link + "/files/", &diffFiles, []KvString{})
     return err, diffFiles
 }
 
@@ -180,7 +237,7 @@ func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
 
     err := GetEntity(links.Self.Href,
                     &file,
-                    []Header{
+                    []KvString{
                         {k: "Accept",
                          v: "application/vnd.reviewboard.org.diff.data+json"}})
 
@@ -188,7 +245,7 @@ func GetFileDiff (links reviewdata.LinkContainer) (error, reviewdata.FileDiff) {
         log.Fatal(err)
     }
 
-    err = GetEntity(links.Self.Href, &fileData, []Header{})
+    err = GetEntity(links.Self.Href, &fileData, []KvString{})
 
     if ( err != nil) {
         log.Fatal(err)
@@ -372,44 +429,18 @@ func RunCheckersAndComment(reviewIdStr    string,
  * @retval string The ID of the review reply, as a string.
  */
 func CreateReviewReply (reviewId string) string {
-    var b bytes.Buffer
-    w := multipart.NewWriter(&b)
-
-    fw, err := w.CreateFormField("body_top")
-
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    if _, err := fw.Write([]byte("This is a test review")); err != nil {
-        log.Fatal(err)
-    }
-
-    w.Close()
-
-    var reviewUrl string = config.RbApiUrl + "/review-requests/" + reviewId + "/reviews/"
-
-    // Post a new blank review, to which we will add comments
-    req, err := http.NewRequest("POST", reviewUrl, &b)
-
-    req.Header.Add("Authorization", config.RbToken)
-    req.Header.Set("Content-Type",
-                   w.FormDataContentType())
-
-    resp, err := (&http.Client{}).Do(req)
-
-    if (err != nil) {
-        log.Fatal(err)
-    }
-    defer resp.Body.Close()
-
-    body, _ := ioutil.ReadAll(resp.Body)
+    var reviewUrl string = config.RbApiUrl +
+                           "/review-requests/" +
+                           reviewId +
+                           "/reviews/"
 
     var reviewResponse ReviewResponse
 
-    err = json.Unmarshal(body, &reviewResponse)
+    err := Post(reviewUrl,
+                []KvString{{k: "body_top", v: "This is a test review"}},
+                &reviewResponse)
 
-    if err != nil {
+    if (err != nil) {
         log.Fatal(err)
     }
 
@@ -654,7 +685,7 @@ func GetReviewRequest(reviewId string) (error, reviewdata.ReviewRequest) {
 
     var review ReviewContainer
 
-    err := GetEntity(url, &review, []Header{})
+    err := GetEntity(url, &review, []KvString{})
 
     return err, review.Review_Request
 }
