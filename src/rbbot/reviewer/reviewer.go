@@ -594,7 +594,7 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
         populatedRequest, err = GetReviewRequest(reviewId)
 
         populatedRequest.ResultChan = incomingReq.ResultChan
-        populatedRequest.SeenBefore = incomingReq.SeenBefore
+        populatedRequest.Force      = incomingReq.Force
 
         if (err != nil) {
             // Something went wrong loading the review
@@ -607,10 +607,13 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     lastSeenDiff, found := db.KvGet("RLD" + reviewId)
 
     if (populatedRequest.Id != 0) {
-        if (found && lastSeenDiff == populatedRequest.Links.Latest_Diff.Href) {
+        if (found &&
+            populatedRequest.Force == false &&
+            lastSeenDiff == populatedRequest.Links.Latest_Diff.Href) {
             // We've already reviewed this before, ignore
             fmt.Println("Ignoring already-seen diff for review " + reviewId)
         } else if (reviewTitleExclusionSet &&
+                   populatedRequest.Force == false &&
                    reviewTitleExclusionRegex.MatchString(
                                                         populatedRequest.Summary)) {
             // We've excluded this review by title

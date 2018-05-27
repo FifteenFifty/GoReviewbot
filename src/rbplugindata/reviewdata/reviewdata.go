@@ -64,10 +64,12 @@ type ReviewRequest struct {
     Last_Updated string
 
     //Fields that are used internally
-    ReviewId  string // Populated if the review needs retrieval
-    Requester string // The name of the entity that requested the review
-               	     // request
-    SeenBefore bool  // Whether this review request has been seen before
+    ReviewId  string /**< Populated if the review needs retrieval */
+    Requester string /**< The name of the entity that requested the review
+               	      *   request */
+    SeenBefore bool  /**< Whether this review request has been seen before */
+    Force      bool  /**< Whether we should force review, regardless of whether
+                      *   we've seen the diff before */
 
     /** A  channel into which a ReviewResult shall be pushed when the review
      *  is complete. NOTE: This _must_ be created as a buffered channel. */

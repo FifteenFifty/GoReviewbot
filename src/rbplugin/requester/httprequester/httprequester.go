@@ -22,6 +22,7 @@ type Requester struct {
 type Payload struct {
     Secret   string
     ReviewId int
+    Force    bool
 }
 
 /**
@@ -60,6 +61,7 @@ func (p Requester) Run(reviewRequests chan <- reviewdata.ReviewRequest) {
 
                             var reviewReq reviewdata.ReviewRequest
 
+                            reviewReq.Force = payload.Force
                             reviewReq.ReviewId = strconv.Itoa(payload.ReviewId)
                             reviewReq.ResultChan = make(
                                                 chan reviewdata.ReviewResult,
