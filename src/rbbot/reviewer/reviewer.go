@@ -683,7 +683,8 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     var result reviewdata.ReviewResult
     result.NumComments = int(commentsMade)
     populatedRequest.ResultChan <- result
-    fmt.Printf("All done.")
+
+    fmt.Println("All done.")
 }
 
 /**
