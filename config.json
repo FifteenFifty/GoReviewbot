@@ -7,13 +7,20 @@
         "rbToken":  "token 66b0a2489e21b1dc349f00ade4e7a839e9102d5b",
         "comments": {
             "top": {
-                "newReview":     "This is an automatic review",
-                "seenBefore":    "Auto-review | [Contribute](https://github.com/FifteenFifty/GoReviewbot)",
-                "perfectReview": "All files look good to me"
+                "newReview":     [
+                    "This is an automatic review"
+                ],
+                "seenBefore":    [
+                    "Auto-review | [Contribute](https://github.com/FifteenFifty/GoReviewbot)"
+                ],
+                "perfectReview": [
+                    "All files look good to me"
+                ]
             },
             "bottom": {
                 "newReview": "This is a work in progress"
-            }
+            },
+            "maxComments": 50
         },
         "exclusionRegexes": {
             "file": [

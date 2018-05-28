@@ -8,14 +8,15 @@ type RbConfig struct {
     RbToken  string
     Comments struct {
         Top struct {
-            NewReview     string
-            SeenBefore    string
-            PerfectReview string
+            NewReview     []string
+            SeenBefore    []string
+            PerfectReview []string
         }
         Bottom struct {
             NewReview  string
             SeenReview string
         }
+        MaxComments int
     }
     ExclusionRegexes struct {
         File        []string
