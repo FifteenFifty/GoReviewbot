@@ -108,3 +108,7 @@ error reporting).
 - [Required] Informs the Reviewer that it has finished reviewing the review
   request, by calling Done on the passed WaitGroup. This must be done even if
   there were no comments generated
+
+## Example Plugins
+
+Example Requester and Reviewer plugins exist in `src/rbplugin`
