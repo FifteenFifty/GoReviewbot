@@ -27,6 +27,11 @@ is then separate from "core", since core remains constant across ReviewBoard
 instances and coding standards differ. It also means that plugins can be
 trivially developed, and there's no chance of accidentally breaking core.
 
+## Plugin dependencies
+
+Plugins only require inclusion of the structs in the `reviewdata` package. TODO:
+split these out into a separate repo, to further distance the API from core
+
 ## Requester Plugins
 
 Requester plugins are responsible for generating review requests.
