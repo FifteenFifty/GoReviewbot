@@ -29,3 +29,5 @@ plugins:
 	cp src/rbplugin/requester/httprequester/httprequester.so $(CURDIR)/plugins/request/
 	cd src/rbplugin/reviewer/linereviewer && env GOPATH=${GOPATH} GOBIN=${GOBIN} $(MAKE)
 	cp src/rbplugin/reviewer/linereviewer/linereviewer.so $(CURDIR)/plugins/review/
+	cd src/rbplugin/reviewer/todoreviewer && env GOPATH=${GOPATH} GOBIN=${GOBIN} $(MAKE)
+	cp src/rbplugin/reviewer/todoreviewer/todoreviewer.so $(CURDIR)/plugins/review/
