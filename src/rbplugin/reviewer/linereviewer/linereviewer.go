@@ -4,6 +4,7 @@ package main
 import (
     "rbplugindata/reviewdata"
     "sync"
+    "encoding/json"
 )
 
 /**
@@ -79,6 +80,12 @@ func (p Reviewer) CheckReview(review      reviewdata.ReviewRequest,
                               wg          *sync.WaitGroup) {
 
     (*wg).Done()
+}
+
+/**
+ * Configures the plugin.
+ */
+func (p Reviewer) Configure(json.RawMessage) {
 }
 
 // Export our plugin as a ReviewerPlugin for main to pick up

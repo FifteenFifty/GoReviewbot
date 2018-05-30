@@ -76,6 +76,7 @@ type ReviewContainer struct {
 type ReviewerPlugin interface {
     Version()       (int,int,int) // The plguin's version (major minor micro)
     CanonicalName() string        // The plugin's canonical name
+    Configure(json.RawMessage)    // Configures itself
     Check(reviewdata.FileDiff,
           chan <- reviewdata.Comment,
           *sync.WaitGroup)           // Runs the review plugin on a file
@@ -619,6 +620,9 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
             // We've excluded this review by title
             fmt.Println("Ignoring review by title: " + populatedRequest.Summary)
         } else {
+            // If we found a latest diff URL, we've seen this review before
+            populatedRequest.SeenBefore = found
+
             // Pick up the review's diffs
             err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
 
@@ -694,8 +698,11 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
  *
  * @param pluginDir The directory from which requester plugins should be
  *                  loaded.
+ * @param pConfig   A raw json message containing config which plugins will
+ *                  decode.
  */
-func LoadReviewerPlugins(pluginDir string) ([]ReviewerPlugin, error) {
+func LoadReviewerPlugins(pluginDir string,
+                         pConfig json.RawMessage) ([]ReviewerPlugin, error) {
     var plugins []ReviewerPlugin
 
     // Gather all of the files in the plugin directory
@@ -730,6 +737,9 @@ func LoadReviewerPlugins(pluginDir string) ([]ReviewerPlugin, error) {
                 fmt.Printf("Could not load Reviewer symbol from %s\n", file)
                 break
             }
+
+            // Configure the plugin
+            reviewer.Configure(pConfig)
 
             // Add the plugin to out list
             plugins = append(plugins, reviewer)
@@ -779,14 +789,19 @@ func Configure(rawConfig json.RawMessage) error {
  * Runs the reviewer. Blocks on the reviewReqs channel, handling reviews as they
  * come in.
  *
- * @param pluginPath The path to the directory in which reviewer plugins shall
- *                   be found.
- * @param rawConfig  A json-encoded struct containing reviewer configuration.
- * @param reviewReqs A channel through which review requests are received.
+ * @param pluginPath            The path to the directory in which reviewer
+ *                              plugins shall be found.
+ * @param rawConfig             A json-encoded struct containing reviewer
+ *                              configuration.
+ * @param reviewPluginRawConfig A json-encoded struct which is passed to
+ *                              plugins, and from which they configure.
+ * @param reviewReqs            A channel through which review requests are
+ *                              received.
  */
-func Go(pluginPath string,
-        rawConfig  json.RawMessage,
-        reviewReqs <-chan reviewdata.ReviewRequest) {
+func Go(pluginPath            string,
+        rawConfig             json.RawMessage,
+        reviewPluginRawConfig json.RawMessage,
+        reviewReqs            <-chan reviewdata.ReviewRequest) {
 
     err := Configure(rawConfig)
 
@@ -796,7 +811,7 @@ func Go(pluginPath string,
         log.Fatal(err)
     }
 
-    plugins, err := LoadReviewerPlugins(pluginPath)
+    plugins, err := LoadReviewerPlugins(pluginPath, reviewPluginRawConfig)
 
     if (err != nil) {
         log.Fatal(err)

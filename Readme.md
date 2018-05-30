@@ -77,6 +77,7 @@ A Reviewer has the following signature:
 type ReviewerPlugin interface {
     Version()       (int,int,int) // The plguin's version (major minor micro)
     CanonicalName() string        // The plugin's canonical name
+    Configure(json.RawMessage)    // Configures the plugin
 
     Check(reviewdata.FileDiff,        //[IN]
           chan <- reviewdata.Comment, //[OUT]
@@ -87,7 +88,7 @@ type ReviewerPlugin interface {
 }
 ```
 
-Version and CanonicalName are run once when the plugin is loaded. The
+Version, CanonicalName, and Configue are run once when the plugin is loaded. The
 CanonicalName must be unique across plugins of the same type (it's used for
 error reporting).
 

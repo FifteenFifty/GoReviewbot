@@ -31,6 +31,10 @@ type Config struct {
     PluginPath  string          // Path under which plugins exist
     DbPath      string          // String to the sqlite database
     ReviewBoard json.RawMessage // Not parsed, passed to the reviewer to parse
+    Plugins struct {
+        Requester json.RawMessage
+        Reviewer  json.RawMessage
+    }
 }
 
 /**
@@ -146,5 +150,6 @@ func main() {
     // Set the reviewer going
     reviewer.Go(config.PluginPath + "/review",
                 config.ReviewBoard,
+                config.Plugins.Reviewer,
                 reviewRequests)
 }

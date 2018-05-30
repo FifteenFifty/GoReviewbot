@@ -8,7 +8,7 @@
         "comments": {
             "top": {
                 "newReview":     [
-                    "This is an automatic review"
+                    "This is an automatic review - the first time I've seen it"
                 ],
                 "seenBefore":    [
                     "Auto-review | [Contribute](https://github.com/FifteenFifty/GoReviewbot)"
@@ -30,6 +30,18 @@
                 "\\[RFC\\]",
                 "NOBOT"
             ]
+        }
+    },
+    "plugins": {
+        "requester": {
+            "CanonicalName": {
+                "key": "value"
+            }
+        },
+        "reviewer": {
+            "TodoReviewer": {
+                "Comment": "This line contains a TODO"
+            }
         }
     }
 }

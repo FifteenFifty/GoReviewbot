@@ -5,6 +5,17 @@ import (
     "rbplugindata/reviewdata"
     "sync"
     "strings"
+    "encoding/json"
+)
+
+type Config struct {
+    TodoReviewer struct {
+        Comment string
+    }
+}
+
+var (
+    config Config
 )
 
 /**
@@ -21,7 +32,7 @@ func CheckTodos(diffChunk   reviewdata.DiffChunk,
 
             if (comment.NumLines == 1) {
                 comment.Line = line.ReviewLine
-                comment.Text = "This line contains a TOOD"
+                comment.Text = config.TodoReviewer.Comment
                 comment.RaiseIssue = true
             } else {
                 comment.Text = "These lines contain TODOs"
@@ -81,6 +92,13 @@ func (p Reviewer) CheckReview(review      reviewdata.ReviewRequest,
                               wg          *sync.WaitGroup) {
 
     (*wg).Done()
+}
+
+/**
+ * Configures the plugin.
+ */
+func (p Reviewer) Configure(rawConfig json.RawMessage) {
+    json.Unmarshal(rawConfig, &config)
 }
 
 // Export our plugin as a ReviewerPlugin for main to pick up
