@@ -8,6 +8,8 @@ import (
     "log"
     "encoding/json"
     "os"
+    "runtime"
+    "time"
 
     "rbplugindata/reviewdata"
     "rbbot/reviewer"
@@ -34,6 +36,10 @@ type Config struct {
     Plugins struct {
         Requester json.RawMessage
         Reviewer  json.RawMessage
+    }
+    Stats       struct {
+        Logstats       bool
+        LogIntervalSec int
     }
 }
 
@@ -105,6 +111,19 @@ func RunRequestPlugins(pluginDir         string,
 }
 
 /**
+ * Logs stats every X seconds.
+ *
+ * @param interval The interval, in seconds, at which stats should be logged.
+ */
+func LogStats (interval int) {
+    for {
+        //Print the number of running goroutines
+        fmt.Printf("%d goroutines currently running\n", runtime.NumGoroutine())
+        time.Sleep(time.Duration(interval) * time.Second)
+    }
+}
+
+/**
  * Loads configuration.
  */
 func LoadConfig (configFile string) Config {
@@ -145,6 +164,11 @@ func main() {
 
     if (!RunRequestPlugins(config.PluginPath + "/request", reviewRequests)) {
         log.Fatal("Failed to load request plugins")
+    }
+
+    // If stats are enabled, set the stat logger going
+    if (config.Stats.Logstats) {
+        go LogStats(config.Stats.LogIntervalSec)
     }
 
     // Set the reviewer going

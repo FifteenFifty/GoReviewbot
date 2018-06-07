@@ -43,5 +43,9 @@
                 "Comment": "This line contains a TODO"
             }
         }
+    },
+    "stats": {
+        "logStats":       true,
+        "logIntervalSec": 5
     }
 }
