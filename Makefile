@@ -38,7 +38,6 @@ ${PLUGINDIR}/review/%.so: $(CURDIR)/src/rbplugin/reviewer/%
 ${PLUGINDIR}/request/%.so: $(CURDIR)/src/rbplugin/requester/%
 	env GOPATH=${GOPATH} GOBIN=${GOBIN} go build -ldflags "-pluginpath ${plugindir}" -buildmode=plugin $</$(basename $(notdir $<)).go
 
-
 ${PLUGINDIR}/request:
 	mkdir -p $@
 
