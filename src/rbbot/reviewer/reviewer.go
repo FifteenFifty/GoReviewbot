@@ -648,14 +648,28 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                 // Can't retrieve any files, skip this review
                 fmt.Printf("Could not find any files: %s\n", err)
             } else {
-                for _, element := range diff.Files {
-                    _, fileDiff := GetFileDiff(element.Links)
+                // We retrieve the files in parallel, but need to mutex the list
+                // addition because slice appending is not goroutine-safe
+                var fileWaiter    sync.WaitGroup
+                var fileListMutex sync.Mutex
+                fileWaiter.Add(len(diff.Files))
 
-                    if (!fileExclusionRegex.MatchString(fileDiff.Filename)) {
-                        fileDiff.Id = element.Id
-                        diffFiles   = append(diffFiles, fileDiff)
-                    }
+                for _, element := range diff.Files {
+                    go func () {
+                        _, fileDiff := GetFileDiff(element.Links)
+
+                        if (!fileExclusionRegex.MatchString(fileDiff.Filename)) {
+                            fileDiff.Id = element.Id
+                            fileListMutex.Lock()
+                                diffFiles   = append(diffFiles, fileDiff)
+                            fileListMutex.Unlock()
+                        }
+                        fileWaiter.Done()
+                    }()
                 }
+
+                // Wait for all files to have been retrieved
+                fileWaiter.Wait()
 
                 fmt.Printf("Retrieving the review took %s\n", time.Since(timer))
                 timer = time.Now()
