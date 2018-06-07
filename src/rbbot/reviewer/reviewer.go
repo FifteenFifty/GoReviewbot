@@ -648,14 +648,20 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                 // Can't retrieve any files, skip this review
                 fmt.Printf("Could not find any files: %s\n", err)
             } else {
-                // We retrieve the files in parallel, but need to mutex the list
-                // addition because slice appending is not goroutine-safe
+                // We retrieve the files in parallel (up to x at a time), and
+                // need to mutex the list addition because slice appending is
+                // not goroutine-safe
                 var fileWaiter    sync.WaitGroup
                 var fileListMutex sync.Mutex
+                throttleChan := make(chan bool, config.ConcurrentFileDownloads)
                 fileWaiter.Add(len(diff.Files))
 
                 for _, element := range diff.Files {
                     go func () {
+                        // Before retrieving the file, add to the channel. This
+                        // will block if the channel is full
+                        throttleChan <- true
+
                         _, fileDiff := GetFileDiff(element.Links)
 
                         if (!fileExclusionRegex.MatchString(fileDiff.Filename)) {
@@ -665,6 +671,10 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                             fileListMutex.Unlock()
                         }
                         fileWaiter.Done()
+
+                        // Eat a value from the throttle channel to free up a
+                        // space
+                        _ = <- throttleChan
                     }()
                 }
 

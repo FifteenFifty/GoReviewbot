@@ -22,4 +22,5 @@ type RbConfig struct {
         File        []string
         ReviewTitle []string
     }
+    ConcurrentFileDownloads int
 }

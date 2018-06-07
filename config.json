@@ -30,7 +30,8 @@
                 "\\[RFC\\]",
                 "NOBOT"
             ]
-        }
+        },
+        "concurrentFileDownloads": 10
     },
     "plugins": {
         "requester": {
