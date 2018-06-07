@@ -82,10 +82,9 @@ type ReviewerPlugin interface {
           chan <- reviewdata.Comment,
           *sync.WaitGroup)           // Runs the review plugin on a file
     CheckReview(reviewdata.ReviewRequest,
-                chan <- string,
-                *sync.WaitGroup) interface{} // Runs the review plugin on the
-                                             // review request. Returns an
-                                             // interface
+                chan <- string) interface{} // Runs the review plugin on the
+                                            // review request. Returns an
+                                            // interface
 }
 
 /**
@@ -93,8 +92,8 @@ type ReviewerPlugin interface {
  * which we pass back in for file reviews.
  */
 type ReviewPluginPassback struct {
-    plugin   ReviewerPlugin
-    passback interface{}
+    Plugin   ReviewerPlugin
+    Passback interface{}
 }
 
 /**
@@ -365,8 +364,8 @@ func CheckFileAndComment(file           reviewdata.FileDiff,
 
     //Run the checkers
     for i := 0; i < numCheckers; i++ {
-        go reviewPlugins[i].plugin.Check(file,
-                                         reviewPlugins[i].passback,
+        go reviewPlugins[i].Plugin.Check(file,
+                                         reviewPlugins[i].Passback,
                                          comments,
                                          &checkerGroup)
     }
@@ -404,21 +403,20 @@ func RunCheckersAndComment(reviewIdStr    string,
                            files         *[]reviewdata.FileDiff,
                            reviewPlugins  []ReviewerPlugin) (int, string) {
     var fileCheckWaitGroup   sync.WaitGroup
-    var reviewCheckWaitGroup sync.WaitGroup
     var commentsMade int32 = 0
 
-    fileCheckWaitGroup.Add(len(reviewPlugins) * len(*files))
+    fileCheckWaitGroup.Add(len(*files))
 
     var reviewCommentChan chan string = make(chan string, len(reviewPlugins))
 
-    var pluginPassbacks = []ReviewPluginPassback
+    var pluginPassbacks []ReviewPluginPassback
 
     for i := 0; i < len(reviewPlugins); i++ {
         // Check the review synchronously, allowing the plugin to pass back
         // something that we give to its file checks
         var passback ReviewPluginPassback
-        passback.plugin = reviewPlugins[i]
-        passback.passback = reviewPlugins[i].CheckReview(reviewRequest,
+        passback.Plugin = reviewPlugins[i]
+        passback.Passback = reviewPlugins[i].CheckReview(reviewRequest,
                                                          reviewCommentChan)
         pluginPassbacks = append(pluginPassbacks, passback)
     }
@@ -429,8 +427,7 @@ func RunCheckersAndComment(reviewIdStr    string,
                                responseIdStr,
                                &commentsMade,
                                &fileCheckWaitGroup,
-                               reviewPlugins[i],
-                               toPassBack)
+                               pluginPassbacks)
     }
 
     // Wait for all file checks to complete

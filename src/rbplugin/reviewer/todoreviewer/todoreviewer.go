@@ -6,12 +6,18 @@ import (
     "sync"
     "strings"
     "encoding/json"
+    "fmt"
 )
 
 type Config struct {
     TodoReviewer struct {
         Comment string
     }
+}
+
+type TestStruct struct {
+    ValueA string
+    ValueB string
 }
 
 var (
@@ -72,8 +78,13 @@ func (p Reviewer) CanonicalName() string {
  * Runs the plugin on a file.
  */
 func (p Reviewer) Check(file        reviewdata.FileDiff,
+                        passback    interface{},
                         commentChan chan <- reviewdata.Comment,
                         wg          *sync.WaitGroup) {
+
+    var ts TestStruct = passback.(TestStruct)
+
+    fmt.Printf("The test struct is: %+v\n", ts)
 
     for _, chunk := range file.Diff_Data.Chunks {
         if (chunk.Change == "insert" || chunk.Change == "replace") {
@@ -86,12 +97,16 @@ func (p Reviewer) Check(file        reviewdata.FileDiff,
 
 /**
  * Runs the plugin on a review request.
+ *
+ * Returns a struct that is passed back into every file check. This one contains
+ * some rubbish.
  */
 func (p Reviewer) CheckReview(review      reviewdata.ReviewRequest,
-                              commentChan chan <- string,
-                              wg          *sync.WaitGroup) {
-
-    (*wg).Done()
+                              commentChan chan <- string) interface{} {
+    var ts TestStruct
+    ts.ValueA = "Hello"
+    ts.ValueB = "ThisIsATest"
+    return ts
 }
 
 /**

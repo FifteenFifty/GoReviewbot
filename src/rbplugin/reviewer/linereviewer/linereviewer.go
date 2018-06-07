@@ -60,6 +60,7 @@ func (p Reviewer) CanonicalName() string {
  * Runs the plugin on a file.
  */
 func (p Reviewer) Check(file        reviewdata.FileDiff,
+                        passback    interface{},
                         commentChan chan <- reviewdata.Comment,
                         wg          *sync.WaitGroup) {
 
@@ -76,10 +77,8 @@ func (p Reviewer) Check(file        reviewdata.FileDiff,
  * Runs the plugin on a review request.
  */
 func (p Reviewer) CheckReview(review      reviewdata.ReviewRequest,
-                              commentChan chan <- string,
-                              wg          *sync.WaitGroup) {
-
-    (*wg).Done()
+                              commentChan chan <- string) interface{} {
+    return nil
 }
 
 /**

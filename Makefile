@@ -33,10 +33,10 @@ cleandb:
 plugins: ${PLUGINDIR}/review/ ${PLUGINDIR}/request/ ${REQPLUGIN_OUT} ${REVPLUGIN_OUT}
 
 ${PLUGINDIR}/review/%.so: $(CURDIR)/src/rbplugin/reviewer/%
-	env GOPATH=${GOPATH} GOBIN=${GOBIN} go build -ldflags "-pluginpath ${plugindir}" -buildmode=plugin $</$(basename $(notdir $<)).go
+	env GOPATH=${GOPATH} GOBIN=${GOBIN} go build -o $@ -buildmode=plugin $</$(basename $(notdir $<)).go
 
 ${PLUGINDIR}/request/%.so: $(CURDIR)/src/rbplugin/requester/%
-	env GOPATH=${GOPATH} GOBIN=${GOBIN} go build -ldflags "-pluginpath ${plugindir}" -buildmode=plugin $</$(basename $(notdir $<)).go
+	env GOPATH=${GOPATH} GOBIN=${GOBIN} go build -o $@ -buildmode=plugin $</$(basename $(notdir $<)).go
 
 ${PLUGINDIR}/request:
 	mkdir -p $@
