@@ -656,16 +656,16 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                 throttleChan := make(chan bool, config.ConcurrentFileDownloads)
                 fileWaiter.Add(len(diff.Files))
 
-                for _, element := range diff.Files {
-                    go func () {
+                for _, passToFunc := range diff.Files {
+                    go func (diffFile DiffFile) {
                         // Before retrieving the file, add to the channel. This
                         // will block if the channel is full
                         throttleChan <- true
 
-                        _, fileDiff := GetFileDiff(element.Links)
+                        _, fileDiff := GetFileDiff(diffFile.Links)
 
                         if (!fileExclusionRegex.MatchString(fileDiff.Filename)) {
-                            fileDiff.Id = element.Id
+                            fileDiff.Id = diffFile.Id
                             fileListMutex.Lock()
                                 diffFiles   = append(diffFiles, fileDiff)
                             fileListMutex.Unlock()
@@ -675,7 +675,7 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                         // Eat a value from the throttle channel to free up a
                         // space
                         _ = <- throttleChan
-                    }()
+                    }(passToFunc)
                 }
 
                 // Wait for all files to have been retrieved
