@@ -23,4 +23,5 @@ type RbConfig struct {
         ReviewTitle []string
     }
     ConcurrentFileDownloads int
+    EmailOnPerfect          bool
 }

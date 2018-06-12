@@ -31,7 +31,8 @@
                 "NOBOT"
             ]
         },
-        "concurrentFileDownloads": 10
+        "concurrentFileDownloads": 10,
+        "emailOnPerfect": true
     },
     "plugins": {
         "requester": {

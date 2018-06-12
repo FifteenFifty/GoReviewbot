@@ -103,7 +103,13 @@ func RunRequestPlugins(pluginDir         string,
             // Run the plugin
             go reviewRequester.Run(reviewRequestChan)
 
-            fmt.Printf("Loaded requester: %s\n", reviewRequester.CanonicalName())
+            major, minor, micro := reviewRequester.Version()
+
+            fmt.Printf("Loaded requester: %s at version %d.%d.%d\n",
+                       reviewRequester.CanonicalName(),
+                       major,
+                       minor,
+                       micro)
         }
     }
 

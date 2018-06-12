@@ -551,6 +551,9 @@ func PublishReview(reviewId      string,
                    KvString{k: "body_top",           v: topComment},
                    KvString{k: "body_top_text_type", v: "markdown"})
 
+    if (!config.EmailOnPerfect && !commented) {
+        kvReq = append(kvReq, KvString{k: "trivial", v: "true"})
+    }
 
     if (!seenBefore && config.Comments.Bottom.NewReview != "") {
         var bottomComment string = config.Comments.Bottom.NewReview
@@ -784,7 +787,12 @@ func LoadReviewerPlugins(pluginDir string,
             // Add the plugin to out list
             plugins = append(plugins, reviewer)
 
-            fmt.Printf("Loaded plugin: %s\n", reviewer.CanonicalName())
+            major, minor, micro := reviewer.Version()
+            fmt.Printf("Loaded plugin: %s at version %d.%d.%d\n",
+                       reviewer.CanonicalName(),
+                       major,
+                       minor,
+                       micro)
         }
     }
 
