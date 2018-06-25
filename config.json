@@ -43,6 +43,29 @@
         "reviewer": {
             "TodoReviewer": {
                 "Comment": "This line contains a TODO"
+            },
+            "regexReviewer": {
+                "Checks": [
+                    {
+                        "File": {
+                            "Match": [
+                                ".cc"
+                            ],
+                            "Exclude": []
+                        },
+                        "Line": {
+                            "Match": [
+                                "TODO"
+                            ],
+                            "Exclude": []
+                        },
+                        "Comment": {
+                            "SingleLine": "Regexer: This line has a TODO",
+                            "MultiLine":  "Regexer: These lines have TODOs",
+                            "RaiseIssue": true
+                        }
+                    }
+                ]
             }
         }
     },
