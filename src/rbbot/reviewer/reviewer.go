@@ -335,12 +335,13 @@ func ManageComments(inChan <- chan reviewdata.Comment,
 /**
  * Runs all of the checkers on a single file, and collates comments.
  */
-func CheckFileAndComment(file           reviewdata.FileDiff,
-                         reviewIdStr    string,
-                         responseIdStr  string,
-                         commentCount  *int32,
-                         wg            *sync.WaitGroup,
-                         reviewPlugins []ReviewPluginPassback) {
+func CheckFileAndComment(file            reviewdata.FileDiff,
+                         reviewIdStr     string,
+                         responseIdStr   string,
+                         commentCount   *int32,
+                         wg             *sync.WaitGroup,
+                         reviewPlugins  []ReviewPluginPassback,
+                         commentOverrun *bool) {
     timer := time.Now()
 
     // Count the plugins
@@ -384,10 +385,14 @@ func CheckFileAndComment(file           reviewdata.FileDiff,
 
     // If there are comments on the file, add them to the review
     if (len(commentedFile.Comments) > 0) {
-        SendFileComments(reviewIdStr, responseIdStr, commentedFile)
-
         // Count the comments
-        atomic.AddInt32(commentCount, int32(len(commentedFile.Comments)))
+        totalComments := atomic.AddInt32(commentCount,
+                                         int32(len(commentedFile.Comments)))
+
+        // If we've some comment budget left, send the comments
+        if (int(totalComments) < config.Comments.MaxComments) {
+            SendFileComments(reviewIdStr, responseIdStr, commentedFile)
+        }
     }
 
     wg.Done()
@@ -403,7 +408,8 @@ func RunCheckersAndComment(reviewIdStr    string,
                            files         *[]reviewdata.FileDiff,
                            reviewPlugins  []ReviewerPlugin) (int, string) {
     var fileCheckWaitGroup   sync.WaitGroup
-    var commentsMade int32 = 0
+    var commentsMade   int32 = 0
+    var commentOverrun bool  = false
 
     fileCheckWaitGroup.Add(len(*files))
 
@@ -427,7 +433,8 @@ func RunCheckersAndComment(reviewIdStr    string,
                                responseIdStr,
                                &commentsMade,
                                &fileCheckWaitGroup,
-                               pluginPassbacks)
+                               pluginPassbacks,
+                               &commentOverrun)
     }
 
     // Wait for all file checks to complete
@@ -439,7 +446,13 @@ func RunCheckersAndComment(reviewIdStr    string,
         generalComment += <-reviewCommentChan + "\n"
     }
 
-    return int(atomic.LoadInt32(&commentsMade)), generalComment
+    commentsGenerated := int(atomic.LoadInt32(&commentsMade))
+
+    if (commentsGenerated > config.Comments.MaxComments) {
+        generalComment += "\n" + config.Comments.MaxCommentComment + "\n"
+    }
+
+    return commentsGenerated, generalComment
 }
 
 /**

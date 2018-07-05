@@ -16,7 +16,8 @@ type RbConfig struct {
             NewReview  string
             SeenReview string
         }
-        MaxComments int
+        MaxComments       int
+        MaxCommentComment string
     }
     ExclusionRegexes struct {
         File        []string

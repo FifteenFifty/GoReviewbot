@@ -20,7 +20,8 @@
             "bottom": {
                 "newReview": "This is a work in progress"
             },
-            "maxComments": 50
+            "maxComments": 50,
+            "maxCommentComment": "Hit the max comment count. Nice."
         },
         "exclusionRegexes": {
             "file": [
