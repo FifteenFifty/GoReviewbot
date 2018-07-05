@@ -13,8 +13,11 @@ A plug-in architecture is used for review request generation and code review.
 
 # Dependencies
 
-go-sqlite3:
+go-sqlite3 - database access:
     https://github.com/mattn/go-sqlite3
+
+prose - allows plugins to do fun things:
+    https://github.com/jdkato/prose
 
 ```
 export GOPATH=`pwd` && go get github.com/mattn/go-sqlite3
