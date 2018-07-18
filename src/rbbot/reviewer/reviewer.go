@@ -655,6 +655,9 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
             // If we found a latest diff URL, we've seen this review before
             populatedRequest.SeenBefore = found
 
+            // Store the fact that we've now seen this diff
+            db.KvPut("RLD" + reviewId, populatedRequest.Links.Latest_Diff.Href)
+
             // Pick up the review's diffs
             err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
 
@@ -724,9 +727,6 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
 
                 fmt.Printf("Publishing took %s\n", time.Since(timer))
                 timer = time.Now()
-
-                // Store the fact that we've now reviewed this
-                db.KvPut("RLD" + reviewId, populatedRequest.Links.Latest_Diff.Href)
 
                 // Also store some fun stats
                 db.KvIncr("reviewsDone", 1)
