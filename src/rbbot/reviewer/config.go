@@ -6,6 +6,8 @@ package reviewer
 type RbConfig struct {
     RbApiUrl string
     RbToken  string
+    RbUsername string /* Used to drop previous comments, when configured to do
+                    * so. */
     Comments struct {
         Top struct {
             NewReview     []string
@@ -16,8 +18,9 @@ type RbConfig struct {
             NewReview  string
             SeenReview string
         }
-        MaxComments       int
-        MaxCommentComment string
+        DropPreviousComments bool
+        MaxComments          int
+        MaxCommentComment    string
     }
     ExclusionRegexes struct {
         File        []string

@@ -5,6 +5,7 @@
     "reviewBoard": {
         "rbApiUrl": "http://reviews.example.com/api",
         "rbToken":  "token 66b0a2489e21b1dc349f00ade4e7a839e9102d5b",
+        "rbUsername": "admin",
         "comments": {
             "top": {
                 "newReview":     [
@@ -21,7 +22,8 @@
                 "newReview": "This is a work in progress"
             },
             "maxComments": 50,
-            "maxCommentComment": "Hit the max comment count. Nice."
+            "maxCommentComment": "Hit the max comment count. Nice.",
+            "dropPreviousComments": true
         },
         "exclusionRegexes": {
             "file": [

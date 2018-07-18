@@ -236,6 +236,116 @@ func SendRequest(method     string,
 }
 
 /**
+ * Drops all open comments from a single review reply.
+ */
+func DropCommentsFromReply(reviewId string, replyId string) {
+    type DiffCommentContainer struct {
+        Diff_Comments []struct {
+            Id           int
+            Issue_Opened bool
+            Issue_Status string
+            Links        struct {
+                Self struct {
+                    Href string
+                }
+            }
+        }
+    }
+
+    var link string = config.RbApiUrl +
+                      "/review-requests/" +
+                      reviewId +
+                      "/reviews/" +
+                      replyId +
+                      "/diff-comments/"
+    var diffCommentContainer DiffCommentContainer
+
+    err := GetEntity(link, &diffCommentContainer, []KvString{})
+
+    if (err != nil) {
+        log.Fatal("Could not retrieve diff comments: " + err.Error())
+    }
+
+    var toDropList []string
+
+    for _, comment := range(diffCommentContainer.Diff_Comments) {
+        if (comment.Issue_Opened && comment.Issue_Status == "open") {
+            // This issue is still open. Close it
+            toDropList = append(toDropList, comment.Links.Self.Href)
+        }
+    }
+
+    var wg sync.WaitGroup
+    wg.Add(len(toDropList))
+    fmt.Printf("There are %d comments to drop from review %s, reply %s\n",
+               len(toDropList),
+               reviewId,
+               replyId)
+
+    // Now we have a list of all comments to drop, drop them in parallel
+    for _, toDrop := range(toDropList) {
+        go func (toDropLink string) {
+            err = SendRequest("PUT",
+                              toDropLink,
+                              []KvString{{k: "issue_status", v: "dropped"}},
+                              nil)
+            if (err != nil) {
+                log.Fatal("Error while dropping comments: " + err.Error())
+            }
+            wg.Done()
+        }(toDrop)
+    }
+    wg.Wait()
+    fmt.Printf("All comments are dropped from review %s\n", reviewId)
+}
+
+/**
+ * Drops previous review comments made by the bot. Returns when all comments are
+ * dropped.
+ */
+func DropPreviousComments(reviewId string) {
+    // If we've logged the last reply we made, drop the comments from that
+    lastReplyId, found := db.KvGet("LastReplyId_" + reviewId)
+
+    if (found) {
+        DropCommentsFromReply(reviewId, lastReplyId)
+    } else {
+        // This review was last reviewed by a previous version of the bot.
+        // Search the entire list of replies for any that it made
+        type ReplyContainer struct {
+            Reviews []struct {
+                Id    int
+                Links struct {
+                    User struct {
+                        Title string
+                    }
+                }
+            }
+        }
+
+        var replyContainer ReplyContainer
+        var url string = config.RbApiUrl +
+                            "/review-requests/" +
+                            reviewId +
+                            "/reviews/"
+
+        err := GetEntity(url, &replyContainer, []KvString{})
+
+        if (err != nil) {
+            log.Fatal("Could not retrieve review response list: " + err.Error())
+        }
+
+        for _, reply := range(replyContainer.Reviews) {
+            if (reply.Links.User.Title == config.RbUsername) {
+                // This is one of ours
+                DropCommentsFromReply(reviewId, strconv.Itoa(reply.Id))
+            }
+        }
+    }
+}
+
+
+/**
  * Retrieves diffed files for a review
  */
 func GetDiffedFiles(link string) (error, DiffFileContainer) {
@@ -658,6 +768,17 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
             // Store the fact that we've now seen this diff
             db.KvPut("RLD" + reviewId, populatedRequest.Links.Latest_Diff.Href)
 
+            // If configured to do so, drop all of our previous comments
+            if (config.Comments.DropPreviousComments &&
+                populatedRequest.SeenBefore) {
+
+                timer = time.Now()
+                DropPreviousComments(reviewId)
+                fmt.Printf("Dropping previous comments took %s\n",
+                           time.Since(timer))
+                timer = time.Now()
+            }
+
             // Pick up the review's diffs
             err, diff := GetDiffedFiles(populatedRequest.Links.Latest_Diff.Href)
 
@@ -706,6 +827,10 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
                 // Create the review reply before processing anything, so we can populate it
                 // with comments in parallel
                 var responseIdStr = CreateReviewReply(reviewId)
+
+                // Save the reply ID in case we review this again
+                db.KvPut("LastReplyId_" + reviewId, responseIdStr)
+
                 fmt.Printf("Making the reply took %s\n", time.Since(timer))
                 timer = time.Now()
 
@@ -744,7 +869,7 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     result.NumComments = int(commentsMade)
     populatedRequest.ResultChan <- result
 
-    fmt.Println("All done.")
+    fmt.Printf("All done after only %s\n", time.Since(timer))
 }
 
 /**
