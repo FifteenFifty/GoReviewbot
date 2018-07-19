@@ -282,9 +282,16 @@ func DropCommentsFromReply(reviewId string, replyId string) {
                reviewId,
                replyId)
 
+    // Drop a max of 10 comments at once
+    throttleChan := make(chan bool, 10)
+
     // Now we have a list of all comments to drop, drop them in parallel
     for _, toDrop := range(toDropList) {
         go func (toDropLink string) {
+            // Before sending the request, add to the channel. This will
+            // block if the channel is full
+            throttleChan <- true
+
             err = SendRequest("PUT",
                               toDropLink,
                               []KvString{{k: "issue_status", v: "dropped"}},
@@ -292,6 +299,10 @@ func DropCommentsFromReply(reviewId string, replyId string) {
             if (err != nil) {
                 log.Fatal("Error while dropping comments: " + err.Error())
             }
+
+            // Eat a value from the throttle channel to free up a space
+            _ = <- throttleChan
+
             wg.Done()
         }(toDrop)
     }
