@@ -461,8 +461,7 @@ func CheckFileAndComment(file            reviewdata.FileDiff,
                          responseIdStr   string,
                          commentCount   *int32,
                          wg             *sync.WaitGroup,
-                         reviewPlugins  []ReviewPluginPassback,
-                         commentOverrun *bool) {
+                         reviewPlugins  []ReviewPluginPassback) {
     timer := time.Now()
 
     // Count the plugins
@@ -506,13 +505,33 @@ func CheckFileAndComment(file            reviewdata.FileDiff,
 
     // If there are comments on the file, add them to the review
     if (len(commentedFile.Comments) > 0) {
-        // Count the comments
+        // As this is running in parallel with all of the other checks, we can't
+        // check existing value and update it in two steps. Everyone adds their
+        // count to the total and then subtracts it to get the original value
         totalComments := atomic.AddInt32(commentCount,
                                          int32(len(commentedFile.Comments)))
 
-        // If we've some comment budget left, send the comments
-        if (int(totalComments) < config.Comments.MaxComments) {
-            SendFileComments(reviewIdStr, responseIdStr, commentedFile)
+        // The number of comments we're allowed to make is:
+        allowedComments := config.Comments.MaxComments -
+                           (int(totalComments) -
+                            len(commentedFile.Comments))
+
+        log.Printf("We are allowed %d max comments on %d\n",
+                   config.Comments.MaxComments,
+                   commentedFile.FileId)
+        log.Printf("We have left %d comments on %d\n",
+                   (int(totalComments) - len(commentedFile.Comments)),
+                   commentedFile.FileId)
+        log.Printf("We are allowed %d comments on %d\n",
+                   allowedComments,
+                   commentedFile.FileId)
+
+        // If we've some comment budget left, send the all of the comments
+        if (allowedComments > 0) {
+            SendFileComments(reviewIdStr,
+                             responseIdStr,
+                             commentedFile,
+                             allowedComments)
         }
     }
 
@@ -528,9 +547,8 @@ func RunCheckersAndComment(reviewIdStr    string,
                            reviewRequest  reviewdata.ReviewRequest,
                            files         *[]reviewdata.FileDiff,
                            reviewPlugins  []ReviewerPlugin) (int, string) {
-    var fileCheckWaitGroup   sync.WaitGroup
-    var commentsMade   int32 = 0
-    var commentOverrun bool  = false
+    var fileCheckWaitGroup sync.WaitGroup
+    var commentsMade       int32 = 0
 
     fileCheckWaitGroup.Add(len(*files))
 
@@ -554,8 +572,7 @@ func RunCheckersAndComment(reviewIdStr    string,
                                responseIdStr,
                                &commentsMade,
                                &fileCheckWaitGroup,
-                               pluginPassbacks,
-                               &commentOverrun)
+                               pluginPassbacks)
     }
 
     // Wait for all file checks to complete
@@ -613,14 +630,26 @@ func CreateReviewReply (reviewId string) string {
  * @param reviewResponseIdString The ID of the existing review response.
  * @param comments               A CommentedFile containing all of the comments
  *                               for the file.
+ * @param allowedComments        The maximum number of comments we are allowed
+ *                               to send.
  */
-func SendFileComments (reviewId               string,
-                       reviewResponseIdString string,
-                       comments               reviewdata.CommentedFile) {
+func SendFileComments(reviewId               string,
+                      reviewResponseIdString string,
+                      comments               reviewdata.CommentedFile,
+                      allowedComments        int) {
+
+    var commentsMade int = 0
 
     if (len(comments.Comments) > 0) {
+        // Multiple comments can start on the same line and span different
+        // numbers of lines
         for line, commentList := range comments.Comments {
             for _, comment := range commentList {
+                // If we've sent as many as we're allowed, don't send any more
+                if (commentsMade >= allowedComments) {
+                    break
+                }
+
                 var commentsId  string = strconv.Itoa(comments.FileId)
                 var commentLine string = strconv.Itoa(line)
                 var numLines    string = strconv.Itoa(comment.NumLines)
@@ -647,6 +676,7 @@ func SendFileComments (reviewId               string,
                                        {k: "text",         v: comment.Text},
                                        {k: "issue_opened", v: raiseIssue}},
                             nil)
+                commentsMade++
             }
         }
     }
@@ -738,6 +768,7 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     fmt.Println("Received review request for: " + reviewId)
 
     timer := time.Now()
+    totalTime := time.Now()
 
     var populatedRequest reviewdata.ReviewRequest = incomingReq
     var commentsMade     int = 0
@@ -880,7 +911,7 @@ func DoReview(incomingReq   reviewdata.ReviewRequest,
     result.NumComments = int(commentsMade)
     populatedRequest.ResultChan <- result
 
-    fmt.Printf("All done after only %s\n", time.Since(timer))
+    fmt.Printf("All done after only %s\n", time.Since(totalTime))
 }
 
 /**

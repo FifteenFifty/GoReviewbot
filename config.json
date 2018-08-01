@@ -21,7 +21,7 @@
             "bottom": {
                 "newReview": "This is a work in progress"
             },
-            "maxComments": 50,
+            "maxComments": 1,
             "maxCommentComment": "Hit the max comment count. Nice.",
             "dropPreviousComments": true
         },

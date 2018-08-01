@@ -115,8 +115,9 @@ type FileDiff struct {
 type CommentedFile struct {
     FileId   int
     Comments map[int][]*Comment /**< A map of ints to lists of pointers to
-                                 *   comments, used to track comments across
-                                 *   lines. */
+                                 *   comments. This allows us to have multiple
+                                 *   comments which cover different numbers of
+                                 *   lines, and start on the same line. */
 }
 
 /**
