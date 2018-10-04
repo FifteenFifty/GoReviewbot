@@ -696,6 +696,7 @@ func SendFileComments(reviewId               string,
                                        {k: "first_line",   v: commentLine},
                                        {k: "num_lines",    v: numLines},
                                        {k: "text",         v: comment.Text},
+                                       {k: "text_type",    v: "markdown"},
                                        {k: "issue_opened", v: raiseIssue}},
                             nil)
                 commentsMade++
