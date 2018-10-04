@@ -748,7 +748,7 @@ func PublishReview(reviewId      string,
                        KvString{k: "body_bottom_text_type", v: "markdown"})
     }
 
-    var reviewUrl string = "http://reviews.example.com/api/review-requests/" +
+    var reviewUrl string = config.RbApiUrl + "/review-requests/" +
                            reviewId +
                            "/reviews/" +
                            responseIdStr +
