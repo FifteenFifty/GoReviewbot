@@ -260,54 +260,74 @@ func DropCommentsFromReply(reviewId string, replyId string) {
                       "/diff-comments/"
     var diffCommentContainer DiffCommentContainer
 
-    err := GetEntity(link, &diffCommentContainer, []KvString{})
+    var allDropped   bool = false
 
-    if (err != nil) {
-        log.Fatal("Could not retrieve diff comments: " + err.Error())
-    }
+    for dropAttempts := 0; dropAttempts < 10; dropAttempts++ {
+        err := GetEntity(link, &diffCommentContainer, []KvString{})
 
-    var toDropList []string
-
-    for _, comment := range(diffCommentContainer.Diff_Comments) {
-        if (comment.Issue_Opened && comment.Issue_Status == "open") {
-            // This issue is still open. Close it
-            toDropList = append(toDropList, comment.Links.Self.Href)
+        if (err != nil) {
+            log.Fatal("Could not retrieve diff comments: " + err.Error())
         }
-    }
 
-    var wg sync.WaitGroup
-    wg.Add(len(toDropList))
-    fmt.Printf("There are %d comments to drop from review %s, reply %s\n",
-               len(toDropList),
-               reviewId,
-               replyId)
+        var toDropList []string
 
-    // Drop a max of 10 comments at once
-    throttleChan := make(chan bool, 10)
-
-    // Now we have a list of all comments to drop, drop them in parallel
-    for _, toDrop := range(toDropList) {
-        go func (toDropLink string) {
-            // Before sending the request, add to the channel. This will
-            // block if the channel is full
-            throttleChan <- true
-
-            err = SendRequest("PUT",
-                              toDropLink,
-                              []KvString{{k: "issue_status", v: "dropped"}},
-                              nil)
-            if (err != nil) {
-                log.Fatal("Error while dropping comments: " + err.Error())
+        for _, comment := range(diffCommentContainer.Diff_Comments) {
+            if (comment.Issue_Opened && comment.Issue_Status == "open") {
+                // This issue is still open. Close it
+                toDropList = append(toDropList, comment.Links.Self.Href)
             }
+        }
 
-            // Eat a value from the throttle channel to free up a space
-            _ = <- throttleChan
+        if (len(toDropList) == 0) {
+            allDropped = true
+            break
+        } else {
+            var wg sync.WaitGroup
+            wg.Add(len(toDropList))
+            fmt.Printf("There are %d comments to drop from review %s, " +
+                       "reply %s\n",
+                       len(toDropList),
+                       reviewId,
+                       replyId)
 
-            wg.Done()
-        }(toDrop)
+            // Drop a max of 10 comments at once
+            throttleChan := make(chan bool, 10)
+
+            // Now we have a list of all comments to drop, drop them in parallel
+            for _, toDrop := range(toDropList) {
+                go func (toDropLink string) {
+                    // Before sending the request, add to the channel. This will
+                    // block if the channel is full
+                    throttleChan <- true
+
+                    err = SendRequest("PUT",
+                                      toDropLink,
+                                      []KvString{{k: "issue_status",
+                                                  v: "dropped"}},
+                                      nil)
+                    if (err != nil) {
+                        log.Fatal("Error while dropping comments: " +
+                                  err.Error())
+                    }
+
+                    // Eat a value from the throttle channel to free up a space
+                    _ = <- throttleChan
+
+                    wg.Done()
+                }(toDrop)
+            }
+            wg.Wait()
+        }
+        // Sleep 1 second so that we don't hammer the server
+        time.Sleep(time.Second)
     }
-    wg.Wait()
-    fmt.Printf("All comments are dropped from review %s\n", reviewId)
+
+    if (allDropped) {
+        fmt.Printf("All comments are dropped from review %s\n", reviewId)
+    } else {
+        log.Printf("Failed to drop all comments from review %s\n",
+                   reviewId)
+    }
 }
 
 /**
@@ -319,7 +339,8 @@ func DropPreviousComments(reviewId string) {
     lastReplyId, found := db.KvGet("LastReplyId_" + reviewId)
 
     if (found) {
-        DropCommentsFromReply(reviewId, lastReplyId)
+        // We don't need to do this synchronously
+        go DropCommentsFromReply(reviewId, lastReplyId)
     } else {
         // This review was last reviewed by a previous version of the bot.
         // Search the entire list of replies for any that it made
@@ -349,7 +370,8 @@ func DropPreviousComments(reviewId string) {
         for _, reply := range(replyContainer.Reviews) {
             if (reply.Links.User.Title == config.RbUsername) {
                 // This is one of ours
-                DropCommentsFromReply(reviewId, strconv.Itoa(reply.Id))
+                // We don't need to do this synchronously
+                go DropCommentsFromReply(reviewId, strconv.Itoa(reply.Id))
             }
         }
     }
