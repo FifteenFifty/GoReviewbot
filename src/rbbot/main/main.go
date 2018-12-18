@@ -22,6 +22,7 @@ import (
 type ReviewRequester interface {
     Version()       (int,int,int) // The plguin's version (major minor micro)
     CanonicalName() string // The plugin's canonical name
+    Configure(json.RawMessage)    // Configures itself
     Run(chan <- reviewdata.ReviewRequest) // Runs the requester
 }
 
@@ -51,6 +52,8 @@ type Config struct {
  *
  * @param pluginDir         The directory from which requester plugins should be
  *                          loaded.
+ * @param config            Raw requester plugin config, from which the plugins
+ *                          can configure.
  * @param reviewRequestChan The channel into which review requests should be
  *                          pushed.
  *
@@ -58,6 +61,7 @@ type Config struct {
  * @retval false Otherwise (error message will have been printed).
  */
 func RunRequestPlugins(pluginDir         string,
+                       config            json.RawMessage,
                        reviewRequestChan chan <- reviewdata.ReviewRequest) bool {
     var success = true
 
@@ -99,6 +103,9 @@ func RunRequestPlugins(pluginDir         string,
                 success = false
                 break
             }
+
+            // Configure the plugin
+            reviewRequester.Configure(config)
 
             // Run the plugin
             go reviewRequester.Run(reviewRequestChan)
@@ -168,7 +175,9 @@ func main() {
     // A channel into which review requests are placed for reviewing
     reviewRequests := make(chan reviewdata.ReviewRequest)
 
-    if (!RunRequestPlugins(config.PluginPath + "/request", reviewRequests)) {
+    if (!RunRequestPlugins(config.PluginPath + "/request",
+                           config.Plugins.Requester,
+                           reviewRequests)) {
         log.Fatal("Failed to load request plugins")
     }
 

@@ -39,6 +39,9 @@ func (p Requester) CanonicalName() string {
     return "HttpRequester"
 }
 
+func (p Requester) Configure(json.RawMessage) {
+}
+
 /**
  * Runs the plugin.
  */
